@@ -1,0 +1,70 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug DTT Scanner",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/bin/Debug/net8.0/SensorGateway.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "justMyCode": false,
+            "enableStepFiltering": false,
+            "logging": {
+                "moduleLoad": false
+            }
+        },
+        {
+            "name": "Debug DTT Scanner (External Terminal)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/bin/Debug/net8.0/SensorGateway.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal",
+            "stopAtEntry": false,
+            "justMyCode": false,
+            "enableStepFiltering": false,
+            "logging": {
+                "moduleLoad": false
+            }
+        },
+        {
+            "name": "Debug DTT Scanner (User Permissions)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/bin/Debug/net8.0/SensorGateway.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "justMyCode": false,
+            "enableStepFiltering": false,
+            "logging": {
+                "moduleLoad": false
+            },
+            "env": {
+                "DOTNET_CLI_TELEMETRY_OPTOUT": "1"
+            }
+        },
+        {
+            "name": "Attach to Process",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            "justMyCode": false
+        },
+        {
+            "name": "Attach to Process by Name",
+            "type": "coreclr", 
+            "request": "attach",
+            "processName": "SensorGateway",
+            "justMyCode": false
+        }
+    ]
+}
