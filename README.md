@@ -151,3 +151,104 @@ classDiagram
     BT510Sensor --> BTManager : requires tokens
     Scanner --> BluetoothConfig : uses configuration
 ```
+
+## Data Flow
+
+1. **Scanner Thread**: Continuously scans for BLE devices matching configured name prefixes
+2. **Device Discovery**: When a matching device is found, check if it needs processing
+3. **Worker Spawning**: Spawn independent worker process for each device requiring processing
+4. **Advertisement Processing**: Parse advertisement data for immediate sensor readings
+5. **Log Processing Decision**: Determine if device log download is required
+6. **Token Acquisition**: Acquire Bluetooth token for active connections
+7. **Device Connection**: Connect to sensor and download log data
+8. **Data Processing**: Convert raw data to structured measurements
+9. **Data Forwarding**: Send processed data to configured endpoints
+10. **Device Marking**: Mark device as processed to prevent immediate re-processing
+
+## Token Usage Policy
+
+The Bluetooth token system ensures controlled access to the Bluetooth stack:
+
+- **Advertisement Processing**: No token required (local data parsing)
+- **Log Download/Processing**: Token required (active BT communication)
+- **Configuration Operations**: Token required (active BT communication)
+- **Mixed Operations**: Token required if any component needs active communication
+
+## Configuration
+
+Configuration is managed through the [`BluetoothConfig`](src/config/config_bluetooth.cs) class:
+
+```csharp
+public class BluetoothConfig
+{
+    public string AdapterName { get; set; } = "";
+    public int DiscoveryTimeoutSeconds { get; set; } = 10;
+    public int ConnectionTimeoutSeconds { get; set; } = 30;
+    public List<string> DeviceNameFilters { get; set; } = { "DTT-", "BT510-" };
+    public List<string> ServiceUuidFilters { get; set; } = { "569a1101-b87f-490c-92cb-11ba5ea5167c" };
+    public short MinRssiThreshold { get; set; } = -90;
+}
+```
+
+## Supported Sensor Types
+
+### BT510 Sensors
+- **Manufacturer**: Laird Connectivity
+- **Communication**: JSON-RPC over BLE
+- **Features**: Temperature logging, configurable sampling rates
+- **Company ID**: 0x0077
+
+### Dummy Sensors
+- **Purpose**: Testing and development
+- **Features**: Simulated temperature data, no hardware required
+- **Company ID**: 0x0000
+
+## Building and Running
+
+**Target Platform**: Linux (requires BlueZ Bluetooth stack)
+
+```bash
+# Build the project
+dotnet build
+
+# Run the application
+dotnet run
+```
+
+## Dependencies
+
+- .NET 8.0
+- HashtagChris.DotNetBlueZ (Linux Bluetooth LE support)
+- System.Threading.Tasks
+- System.Collections.Concurrent
+
+## Project Structure
+
+```
+src/
+├── bt/                 # Bluetooth abstraction layer
+│   ├── btdevice.cs    # Device abstraction
+│   └── btmanager.cs   # Resource management
+├── sensor/            # Sensor implementations
+│   ├── sensor.cs      # Base sensor class
+│   ├── sensor_bt510.cs # BT510 implementation
+│   └── sensor_dummy.cs # Dummy implementation
+├── config/            # Configuration management
+│   └── config_bluetooth.cs
+├── scanner.cs         # Device scanning logic
+├── measurement.cs     # Data structures
+└── Program.cs         # Application entry point
+```
+
+## Future Enhancements
+
+- MQTT data forwarding
+- REST API endpoints
+- Database persistence
+- Web-based configuration interface
+- Additional sensor type support
+- Real-time monitoring dashboard
+
+## License
+
+This project is licensed under the terms specified in the [`LICENSE`](LICENSE)
