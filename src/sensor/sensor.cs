@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using GatewaySensor.Bluetooth;
+using GatewaySensor.Gateway;
 
 namespace GatewaySensor.Sensors
 {

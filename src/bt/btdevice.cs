@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using HashtagChris.DotNetBlueZ;
+using GatewaySensor.Sensors;
 
-namespace GatewaySensor.Sensors
+namespace GatewaySensor.Bluetooth
 {
     #region BTDevice
     /// <summary>
