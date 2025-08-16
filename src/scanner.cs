@@ -9,7 +9,7 @@ using GatewaySensor.Configuration;
 using HashtagChris.DotNetBlueZ;
 using HashtagChris.DotNetBlueZ.Extensions;
 
-namespace GatewaySensor.Sensors
+namespace GatewaySensor.Gateway
 {
     /// <summary>
     /// Singleton device scanner that continuously scans for BLE devices and spawns worker processes
