@@ -228,6 +228,7 @@ dotnet run
 src/
 ├── bt/                 # Bluetooth abstraction layer
 │   ├── btdevice.cs    # Device abstraction
+│   ├── btaddress.cs   # Device (MAC) addresss
 │   └── btmanager.cs   # Resource management
 ├── sensor/            # Sensor implementations
 │   ├── sensor.cs      # Base sensor class
