@@ -1,0 +1,52 @@
+bluetooth:
+  adapterName: ""
+  discoveryTimeoutSeconds: 10
+  connectionTimeoutSeconds: 30
+  maxRetryAttempts: 3
+  retryDelayMs: 2000
+  deviceNameFilters:
+    - "DTT-"
+    - "BT510-"
+  serviceUuidFilters:
+    - "569a1101-b87f-490c-92cb-11ba5ea5167c"
+  minRssiThreshold: -90
+
+sensors:
+  defaultCollectionIntervalSeconds: 60
+  maxLogEntriesPerRequest: 128
+  dataPollingTimeoutSeconds: 30
+  enableDummySensor: false
+  bt510:
+    jsonRpcTimeoutSeconds: 30
+    maxCommandRetries: 5
+    mtuSize: 244
+    commandRetryDelayMs: 300
+
+logging:
+  logLevel: "Info"
+  enableConsoleLogging: true
+  enableFileLogging: false
+  logFilePath: ""
+  maxLogFileSizeMB: 10
+  maxLogFiles: 5
+
+storage:
+  dataDirectory: "./data"
+  databaseConnectionString: ""
+  storageType: "File"
+  dataRetentionDays: 30
+  enableCompression: true
+
+network:
+  enableApiServer: false
+  apiServerPort: 8080
+  apiServerAddress: "localhost"
+  enableMqtt: false
+  mqtt:
+    brokerHost: "localhost"
+    brokerPort: 1883
+    username: ""
+    password: ""
+    clientId: "GatewaySensor"
+    baseTopic: "sensors"
+    enableTls: false
