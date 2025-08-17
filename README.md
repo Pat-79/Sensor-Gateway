@@ -12,10 +12,15 @@ The Sensor Gateway is designed to continuously scan for BLE sensors, collect mea
 - **Dual Data Collection**: 
   - Advertisement data parsing (passive, battery-efficient)
   - Active log downloading via BLE connections when needed
+- **Thread-Safe Operations**: All communication methods use SemaphoreSlim for thread safety
+- **Dual API Design**: Every async method has a synchronous counterpart for compatibility
+- **Robust Connection Management**: Token-based RAII system with automatic retry logic (3 attempts)
 - **Intelligent Scheduling**: Devices are marked after processing to prevent unnecessary reconnections
 - **Bluetooth Stack Protection**: Token-based RAII system to prevent overwhelming the Bluetooth stack
 - **Background Scanning**: Continuous scanning thread with configurable intervals and device filters
 - **Worker Process Architecture**: Each discovered device spawns an independent worker process
+- **Comprehensive Error Handling**: Detailed validation and meaningful exception messages
+- **Resource Management**: Proper cleanup and disposal patterns with automatic connection timeouts
 
 ## Architecture
 
@@ -34,6 +39,12 @@ The Sensor Gateway is designed to continuously scan for BLE sensors, collect mea
 
 #### Device Abstraction ([`BTDevice`](src/bt/btdevice.cs))
 - Unified interface for different BLE device types
+- **Communication Module** ([`BTDevice.Communications`](src/bt/btdevice.communications.cs)): 
+  - Dual async/sync API design for all operations
+  - Thread-safe buffer management with automatic clearing
+  - Service and characteristic discovery with validation
+  - Connection management with retry logic and timeouts
+  - Comprehensive error handling and validation
 - Handles device property extraction and manufacturer data processing
 - Supports both BT510 sensors and dummy devices for testing
 
@@ -41,6 +52,67 @@ The Sensor Gateway is designed to continuously scan for BLE sensors, collect mea
 - **Base Sensor Class** ([`Sensor`](src/sensor/sensor.cs)): Abstract base providing common sensor functionality
 - **BT510 Sensor** ([`BT510Sensor`](src/sensor/sensor_bt510.cs)): JSON-RPC communication with BT510 devices
 - **Dummy Sensor** ([`DummySensor`](src/sensor/sensor_dummy.cs)): Testing and development sensor implementation
+
+## BTDevice Communication API
+
+The BTDevice class provides comprehensive Bluetooth communication capabilities:
+
+### Connection Management
+```csharp
+// Asynchronous connection with automatic retry (3 attempts)
+Task<bool> ConnectAsync()
+bool Connect()
+
+// Graceful disconnection with resource cleanup
+Task DisconnectAsync() 
+void Disconnect()
+
+// Connection status checking
+Task<bool> IsConnectedAsync()
+bool IsConnected()
+```
+
+### Service & Characteristic Discovery
+```csharp
+// Service operations
+Task<IReadOnlyList<string>> GetServicesAsync()
+Task<bool> HasServiceAsync(string serviceUuid)
+Task<IGattService1?> GetServiceAsync(string serviceUuid)
+
+// Characteristic operations  
+Task<IReadOnlyList<string>> GetCharacteristicsAsync(string serviceUuid)
+Task<bool> HasCharacteristicAsync(IGattService1 service, string characteristicUuid)
+Task<GattCharacteristic?> GetCharacteristicAsync(IGattService1 service, string characteristicUuid)
+```
+
+### Communication Setup & Data Transfer
+```csharp
+// Setup notification handling and command channels
+Task SetNotificationsAsync(string serviceUuid, string characteristicUuid)
+Task SetCommandCharacteristicAsync(string characteristicUuid)
+
+// Communication session management
+Task StartCommunicationAsync()
+void StopCommunication()
+
+// Data transmission (fire-and-forget with optional session cleanup)
+Task WriteWithoutResponseAsync(byte[] data, bool stopCommunication = true)
+```
+
+### Buffer Management
+```csharp
+// Thread-safe buffer operations
+Task<byte[]> GetBufferDataAsync()
+Task<long> GetBufferSizeAsync() 
+Task ClearBufferAsync()
+
+// Properties
+bool CommunicationInProgress { get; }
+long BufferSize { get; }
+
+// Events
+event EventHandler<byte[]> NotificationDataReceived;
+```
 
 ## Object Diagram
 
@@ -87,6 +159,21 @@ classDiagram
         +RSSI: short
         +FromBlueZDeviceAsync(): BTDevice
         +DetermineDeviceType(): DeviceType
+    }
+
+    class BTDeviceCommunications {
+        -_dataBuffer: MemoryStream
+        -_bufferSemaphore: SemaphoreSlim
+        -_device: Device
+        -_adapter: Adapter
+        +ConnectAsync(): bool
+        +DisconnectAsync()
+        +IsConnectedAsync(): bool
+        +GetServicesAsync(): IReadOnlyList~string~
+        +SetNotificationsAsync()
+        +WriteWithoutResponseAsync()
+        +GetBufferDataAsync(): byte[]
+        +ClearBufferAsync()
     }
 
     class Sensor {
@@ -145,6 +232,7 @@ classDiagram
     BTManager --> BTToken : manages pool
     BTDevice --> DeviceType : determines type
     BTDevice --> SensorType : maps to sensor
+    BTDevice --> BTDeviceCommunications : uses for BLE operations
     Sensor --> BTDevice : wraps device
     BT510Sensor --|> Sensor : implements
     DummySensor --|> Sensor : implements
@@ -160,10 +248,14 @@ classDiagram
 4. **Advertisement Processing**: Parse advertisement data for immediate sensor readings
 5. **Log Processing Decision**: Determine if device log download is required
 6. **Token Acquisition**: Acquire Bluetooth token for active connections
-7. **Device Connection**: Connect to sensor and download log data
-8. **Data Processing**: Convert raw data to structured measurements
-9. **Data Forwarding**: Send processed data to configured endpoints
-10. **Device Marking**: Mark device as processed to prevent immediate re-processing
+7. **Device Connection**: Connect to sensor using retry logic with automatic timeout management
+8. **Service Discovery**: Discover and validate required services and characteristics
+9. **Communication Setup**: Configure notifications and command channels
+10. **Data Transfer**: Send commands and receive responses using thread-safe buffer operations
+11. **Data Processing**: Convert raw data to structured measurements
+12. **Resource Cleanup**: Automatic disconnection and resource disposal
+13. **Data Forwarding**: Send processed data to configured endpoints
+14. **Device Marking**: Mark device as processed to prevent immediate re-processing
 
 ## Token Usage Policy
 
@@ -171,8 +263,10 @@ The Bluetooth token system ensures controlled access to the Bluetooth stack:
 
 - **Advertisement Processing**: No token required (local data parsing)
 - **Log Download/Processing**: Token required (active BT communication)
-- **Configuration Operations**: Token required (active BT communication)
+- **Configuration Operations**: Token required (active BT communication)  
+- **Service Discovery**: Token required (active BT communication)
 - **Mixed Operations**: Token required if any component needs active communication
+- **Connection Management**: Automatic token timeout after 120 seconds
 
 ## Configuration
 
@@ -197,6 +291,8 @@ public class BluetoothConfig
 - **Communication**: JSON-RPC over BLE
 - **Features**: Temperature logging, configurable sampling rates
 - **Company ID**: 0x0077
+- **Services**: Custom Laird service (569a1101-b87f-490c-92cb-11ba5ea5167c)
+- **Characteristics**: Command (569a2001-...) and Response (569a2000-...)
 
 ### Dummy Sensors
 - **Purpose**: Testing and development
@@ -226,19 +322,20 @@ dotnet run
 
 ```
 src/
-├── bt/                 # Bluetooth abstraction layer
-│   ├── btdevice.cs    # Device abstraction
-│   ├── btaddress.cs   # Device (MAC) addresss
-│   └── btmanager.cs   # Resource management
-├── sensor/            # Sensor implementations
-│   ├── sensor.cs      # Base sensor class
-│   ├── sensor_bt510.cs # BT510 implementation
-│   └── sensor_dummy.cs # Dummy implementation
-├── config/            # Configuration management
+├── bt/                          # Bluetooth abstraction layer
+│   ├── btdevice.cs             # Device abstraction
+│   ├── btdevice.communications.cs # Communication methods & buffer management
+│   ├── btaddress.cs            # Device (MAC) address
+│   └── btmanager.cs            # Resource management
+├── sensor/                      # Sensor implementations
+│   ├── sensor.cs               # Base sensor class
+│   ├── sensor_bt510.cs         # BT510 implementation
+│   └── sensor_dummy.cs         # Dummy implementation
+├── config/                      # Configuration management
 │   └── config_bluetooth.cs
-├── scanner.cs         # Device scanning logic
-├── measurement.cs     # Data structures
-└── Program.cs         # Application entry point
+├── scanner.cs                   # Device scanning logic
+├── measurement.cs               # Data structures
+└── Program.cs                   # Application entry point
 ```
 
 ## Future Enhancements
@@ -253,4 +350,3 @@ src/
 ## License
 
 This project is licensed under the terms specified in the [`LICENSE`](LICENSE)
-
