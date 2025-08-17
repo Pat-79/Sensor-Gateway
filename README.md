@@ -270,6 +270,26 @@ The Bluetooth token system ensures controlled access to the Bluetooth stack:
 
 ## Configuration
 
+### Timeout Configuration
+The system uses the following built-in timeouts (configurable via constants):
+
+```csharp
+// Connection timeouts
+ADAPTER_POWER_TIMEOUT_SECONDS = 5
+MAX_CONNECTION_ATTEMPTS = 3
+CONNECTION_STABILIZATION_DELAY = 2000ms
+CONNECTION_RETRY_DELAY = 1000ms
+
+// Communication timeouts  
+TOKEN_TIMEOUT_SECONDS = 120
+NOTIFICATION_WAIT_TIMEOUT_SECONDS = 30
+```
+
+### Bluetooth Adapter Requirements
+- Linux with BlueZ stack (tested with BlueZ 5.50+)
+- Bluetooth 4.0+ adapter with BLE support
+- Root privileges may be required for some operations
+
 Configuration is managed through the [`BluetoothConfig`](src/config/config_bluetooth.cs) class:
 
 ```csharp
@@ -278,7 +298,7 @@ public class BluetoothConfig
     public string AdapterName { get; set; } = "";
     public int DiscoveryTimeoutSeconds { get; set; } = 10;
     public int ConnectionTimeoutSeconds { get; set; } = 30;
-    public List<string> DeviceNameFilters { get; set; } = { "DTT-", "BT510-" };
+    public List<string> DeviceNameFilters { get; set; } = { "S12345-", "BT510-" };
     public List<string> ServiceUuidFilters { get; set; } = { "569a1101-b87f-490c-92cb-11ba5ea5167c" };
     public short MinRssiThreshold { get; set; } = -90;
 }
@@ -346,6 +366,217 @@ src/
 - Web-based configuration interface
 - Additional sensor type support
 - Real-time monitoring dashboard
+
+## Performance Optimizations
+
+### ConfigureAwait Usage
+The library implements `ConfigureAwait(false)` throughout all internal async operations:
+
+```csharp
+await _bufferSemaphore.WaitAsync().ConfigureAwait(false);
+await _dataBuffer.WriteAsync(data, 0, data.Length).ConfigureAwait(false);
+await _adapter.SetPoweredAsync(true).ConfigureAwait(false);
+```
+
+**Benefits:**
+- Prevents thread pool starvation in library consumers
+- Eliminates potential deadlocks in mixed sync/async scenarios
+- Improves overall throughput by allowing continuations on any thread pool thread
+- Reduces context switching overhead
+
+### Connection Management
+- **Token-based RAII**: Prevents Bluetooth stack overload through controlled concurrency
+- **Intelligent retry logic**: 3 attempts with exponential backoff (1s, 2s delays)
+- **Automatic timeout handling**: All operations have configurable timeouts
+- **Resource cleanup**: Guaranteed cleanup even in failure scenarios
+
+### Performance & Resource Management
+- **Optimized async patterns**: ConfigureAwait(false) used throughout for library performance
+- **Configurable timeouts**: All operations have well-defined timeout constants
+- **Enhanced retry logic**: Exponential backoff with 3 connection attempts
+- **Memory efficient**: Proper disposal patterns prevent resource leaks
+- **Thread-safe buffer operations**: SemaphoreSlim protection with timeout handling
+
+## Usage Examples
+
+### Enhanced Error Handling with Timeouts
+```csharp
+try
+{
+    // Connection with automatic retry and timeout
+    bool connected = await device.ConnectAsync();
+    
+    // Setup with built-in timeout protection
+    await device.SetNotificationsAsync(serviceUuid, responseCharUuid);
+    await device.SetCommandCharacteristicAsync(commandCharUuid);
+    
+    // Write with notification timeout handling
+    await device.WriteWithoutResponseAsync(commandData, waitForResponse: true);
+}
+catch (TimeoutException ex)
+{
+    Console.WriteLine($"Operation timed out: {ex.Message}");
+}
+catch (InvalidOperationException ex) when (ex.Message.Contains("Communication is already in progress"))
+{
+    Console.WriteLine("Previous operation still in progress - wait before retrying");
+}
+finally
+{
+    await device.DisconnectAsync(); // Guaranteed cleanup
+}
+```
+
+### Basic Sensor Data Processing
+```csharp
+// Assuming device is already connected
+var measurements = await sensor.GetMeasurementsAsync();
+
+// Process and display measurements
+foreach (var measurement in measurements)
+{
+    Console.WriteLine($"Timestamp: {measurement.Timestamp}, Temperature: {measurement.Temperature}");
+}
+```
+
+### Advertisement Data Parsing
+```csharp
+// Directly from scanner (no device connection required)
+var parser = new AdvertisementParser();
+var result = parser.Parse(advertisementData);
+
+// Check for specific manufacturer data
+if (result.ManufacturerData.ContainsKey(0x0077))
+{
+    Console.WriteLine("Laird BT510 advertisement detected");
+}
+```
+
+### Log Download and Processing
+```csharp
+// Download and process sensor log
+var logData = await sensor.DownloadLogAsync();
+var processedData = sensor.ProcessLogAsync(logData);
+
+// Save to file
+File.WriteAllText("sensor_log.json", JsonConvert.SerializeObject(processedData));
+```
+
+### Configuration Update Example
+```csharp
+// Update BT510 sensor configuration
+var config = new Dictionary<string, object>
+{
+    { "SamplingRate", 10 },
+    { "LogInterval", 60 }
+};
+
+bool success = await sensor.UpdateConfigurationAsync(config);
+Console.WriteLine(success ? "Configuration updated successfully" : "Configuration update failed");
+```
+
+### Dummy Sensor Data Generation
+```csharp
+// For testing without hardware
+var dummySensor = new DummySensor();
+var testData = await dummySensor.DownloadLogAsync();
+
+// Validate generated data
+foreach (var dataPoint in testData)
+{
+    Debug.Assert(dataPoint.Temperature >= -40 && dataPoint.Temperature <= 125);
+}
+```
+
+### Comprehensive Exception Handling
+```csharp
+try
+{
+    await device.ConnectAsync();
+    // Other operations...
+}
+catch (Exception ex) when (ex is TimeoutException || ex is InvalidOperationException)
+{
+    // Handle specific exceptions
+    Console.WriteLine($"Error: {ex.Message}");
+}
+catch (Exception ex)
+{
+    // Handle unexpected exceptions
+    Console.WriteLine($"Unexpected error: {ex}");
+    throw; // Rethrow if necessary
+}
+finally
+{
+    // Cleanup code
+    await device.DisconnectAsync();
+}
+```
+
+### Advanced Scenarios
+```csharp
+// Parallel processing of multiple devices
+var tasks = devices.Select(device => ProcessDeviceAsync(device));
+await Task.WhenAll(tasks);
+
+// Batch characteristic discovery
+var services = await device.GetServicesAsync();
+var characteristicsTasks = services.Select(service => device.GetCharacteristicsAsync(service));
+var allCharacteristics = await Task.WhenAll(characteristicsTasks);
+```
+
+### Performance Testing
+```csharp
+// Measure advertisement processing time
+var stopwatch = Stopwatch.StartNew();
+var results = parser.Parse(advertisementData);
+stopwatch.Stop();
+Console.WriteLine($"Advertisement parsed in {stopwatch.ElapsedMilliseconds} ms");
+
+// Connection stability under load
+var connectionTasks = Enumerable.Range(0, 10).Select(_ => device.ConnectAsync());
+await Task.WhenAll(connectionTasks);
+```
+
+### Resource Leak Prevention
+```csharp
+// Ensure all tasks complete and resources are released
+try
+{
+    await Task.WhenAll(activeTasks);
+}
+catch
+{
+    // Log and suppress exceptions
+}
+finally
+{
+    // Force cleanup
+    foreach (var device in activeDevices)
+    {
+        device.Disconnect();
+    }
+}
+```
+
+### Graceful Degradation
+```csharp
+// Fallback to dummy sensor if BT510 not available
+ISensor activeSensor;
+
+try
+{
+    activeSensor = new BT510Sensor();
+    await activeSensor.InitializeAsync();
+}
+catch
+{
+    Console.WriteLine("BT510 sensor initialization failed, falling back to DummySensor");
+    activeSensor = new DummySensor();
+}
+
+// Use activeSensor for data processing
+```
 
 ## License
 
