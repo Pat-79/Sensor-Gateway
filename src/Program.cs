@@ -1,14 +1,35 @@
 using System;
-using SensorGateway.Configuration;
+using System.Threading.Tasks;
 
 
 class Program
 {
-    static void Main(string[] args)
+    static async Task<int> Main(string[] args) // ✅ Make Main async
     {
-        //AppConfig.Initialize();
-        Console.WriteLine(AppConfig.Bluetooth.AdapterName);
+        Console.WriteLine("Sensor Gateway - Bluetooth Device Communication Test");
 
-        return; // Exit early for now, as this is a placeholder for the main program logic
+        // <-- Begin of test code
+        // This code is a placeholder for the test program.
+        // It dynamically loads the TestProgram class and invokes the RunTestAsync method.
+        // The test code will be removed in the final application.
+        var testProgramType = Type.GetType("TestProgram");
+        if (testProgramType != null)
+        {
+            var method = testProgramType.GetMethod("RunTestAsync", 
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+            
+            if (method != null)
+            {
+                var result = method.Invoke(null, null);
+                if (result is Task task)
+                {
+                    await task; // ✅ Properly await the async method
+                    Console.WriteLine("Test completed successfully!");
+                }
+            }
+        }
+        // End of test code -->
+
+        return 0;
     }
 }
