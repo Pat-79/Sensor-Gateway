@@ -23,7 +23,7 @@ class Program
                 var result = method.Invoke(null, null);
                 if (result is Task task)
                 {
-                    await task; // ✅ Properly await the async method
+                    await task;
                     Console.WriteLine("Test completed successfully!");
                 }
             }
