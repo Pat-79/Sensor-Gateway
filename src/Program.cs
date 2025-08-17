@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 class Program
 {
-    static async Task<int> Main(string[] args) // ✅ Make Main async
+    static async Task<int> Main(string[] args)
     {
         Console.WriteLine("Sensor Gateway - Bluetooth Device Communication Test");
 
