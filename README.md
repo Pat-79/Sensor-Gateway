@@ -37,14 +37,32 @@ The Sensor Gateway is designed to continuously scan for BLE sensors, collect mea
 - Prevents Bluetooth stack overload through controlled concurrency
 - RAII implementation ensures proper resource cleanup
 
-#### Device Abstraction ([`BTDevice`](src/bt/btdevice.cs))
-- Unified interface for different BLE device types
-- **Communication Module** ([`BTDevice.Communications`](src/bt/btdevice.communications.cs)): 
+#### Device Abstraction
+- **Main Device Class** ([`BTDevice`](src/bt/btdevice.cs)): Core device properties, events, and main interface
+- **Connection Management** ([`BTDevice.Connection`](src/bt/btdevice.connection.cs)): 
+  - Adapter initialization with power state management
+  - Device discovery and connection with automatic retry logic
+  - Token acquisition and connection lifecycle management
+- **Service Discovery** ([`BTDevice.Services`](src/bt/btdevice.services.cs)):
+  - Service and characteristic enumeration with validation
+  - UUID normalization and service selection
+  - Comprehensive service availability checking
+- **Communication Module** ([`BTDevice.Communication`](src/bt/btdevice.communication.cs)): 
   - Dual async/sync API design for all operations
-  - Thread-safe buffer management with automatic clearing
-  - Service and characteristic discovery with validation
-  - Connection management with retry logic and timeouts
-  - Comprehensive error handling and validation
+  - Notification setup and event handling
+  - Command characteristic configuration
+  - Write operations with optional response waiting
+- **Buffer Management** ([`BTDevice.Buffer`](src/bt/btdevice.buffer.cs)):
+  - Thread-safe buffer operations with SemaphoreSlim protection
+  - Efficient memory stream management
+  - Asynchronous buffer access with proper disposal
+- **Resource Cleanup** ([`BTDevice.Disposal`](src/bt/btdevice.disposal.cs)):
+  - Comprehensive resource disposal patterns
+  - Event handler cleanup and memory management
+- **Configuration Constants** ([`BTDevice.Constants`](src/bt/btdevice.constants.cs)):
+  - Centralized timeout and retry configuration
+  - Well-defined connection parameters
+  - Performance optimization settings
 - Handles device property extraction and manufacturer data processing
 - Supports both BT510 sensors and dummy devices for testing
 
@@ -161,19 +179,45 @@ classDiagram
         +DetermineDeviceType(): DeviceType
     }
 
-    class BTDeviceCommunications {
-        -_dataBuffer: MemoryStream
-        -_bufferSemaphore: SemaphoreSlim
+    class BTDeviceConnection {
         -_device: Device
         -_adapter: Adapter
+        -_token: BTToken
         +ConnectAsync(): bool
         +DisconnectAsync()
         +IsConnectedAsync(): bool
+        +InitializeAdapterAsync()
+        +InitializeDeviceAsync()
+    }
+
+    class BTDeviceServices {
+        -_service: IGattService1
         +GetServicesAsync(): IReadOnlyList~string~
+        +GetServiceAsync(): IGattService1
+        +GetCharacteristicsAsync(): IReadOnlyList~string~
+        +GetCharacteristicAsync(): GattCharacteristic
+        +SetServiceAsync()
+    }
+
+    class BTDeviceCommunication {
+        -_commandChar: GattCharacteristic
+        -_responseChar: GattCharacteristic
+        -_communicationInProgress: bool
+        -_notificationReceived: ManualResetEventSlim
         +SetNotificationsAsync()
+        +SetCommandCharacteristicAsync()
         +WriteWithoutResponseAsync()
+        +StartCommunicationAsync()
+        +StopCommunication()
+    }
+
+    class BTDeviceBuffer {
+        -_dataBuffer: MemoryStream
+        -_bufferSemaphore: SemaphoreSlim
         +GetBufferDataAsync(): byte[]
         +ClearBufferAsync()
+        +AppendToBufferAsync()
+        +BufferSize: long
     }
 
     class Sensor {
@@ -206,33 +250,15 @@ classDiagram
         +UpdateConfigurationAsync(): bool
     }
 
-    class DeviceType {
-        <<enumeration>>
-        BT510
-        Dummy
-    }
-
-    class SensorType {
-        <<enumeration>>
-        BT510
-        Dummy
-    }
-
-    class BluetoothConfig {
-        +AdapterName: string
-        +DiscoveryTimeoutSeconds: int
-        +ConnectionTimeoutSeconds: int
-        +DeviceNameFilters: List~string~
-        +ServiceUuidFilters: List~string~
-        +MinRssiThreshold: short
-    }
-
     Scanner --> BTManager : uses tokens
     Scanner --> BTDevice : creates from BlueZ devices
     BTManager --> BTToken : manages pool
     BTDevice --> DeviceType : determines type
     BTDevice --> SensorType : maps to sensor
-    BTDevice --> BTDeviceCommunications : uses for BLE operations
+    BTDevice --> BTDeviceConnection : connection management
+    BTDevice --> BTDeviceServices : service discovery
+    BTDevice --> BTDeviceCommunication : data transfer
+    BTDevice --> BTDeviceBuffer : buffer operations
     Sensor --> BTDevice : wraps device
     BT510Sensor --|> Sensor : implements
     DummySensor --|> Sensor : implements
@@ -343,8 +369,13 @@ dotnet run
 ```
 src/
 ├── bt/                          # Bluetooth abstraction layer
-│   ├── btdevice.cs             # Device abstraction
-│   ├── btdevice.communications.cs # Communication methods & buffer management
+│   ├── btdevice.cs             # Main device class and properties
+│   ├── btdevice.constants.cs   # Configuration constants and timeouts
+│   ├── btdevice.connection.cs  # Connection management and adapter initialization
+│   ├── btdevice.services.cs    # Service and characteristic discovery
+│   ├── btdevice.communication.cs # Data transfer and notification handling
+│   ├── btdevice.buffer.cs      # Thread-safe buffer management
+│   ├── btdevice.disposal.cs    # Resource cleanup and disposal
 │   ├── btaddress.cs            # Device (MAC) address
 │   └── btmanager.cs            # Resource management
 ├── sensor/                      # Sensor implementations
@@ -357,6 +388,26 @@ src/
 ├── measurement.cs               # Data structures
 └── Program.cs                   # Application entry point
 ```
+
+## Code Organization
+
+### Modular Partial Class Design
+The BTDevice class uses a modular partial class structure for improved maintainability:
+
+- **btdevice.cs**: Core class definition, properties, events, and main interface
+- **btdevice.constants.cs**: All configuration constants and timeout values in one location
+- **btdevice.connection.cs**: Connection lifecycle, adapter management, and device initialization  
+- **btdevice.services.cs**: Service discovery, characteristic enumeration, and service selection
+- **btdevice.communication.cs**: Data transfer, notifications, and command handling
+- **btdevice.buffer.cs**: Thread-safe buffer operations and memory management
+- **btdevice.disposal.cs**: Resource cleanup and disposal patterns
+
+### Benefits of This Structure
+- **Single Responsibility**: Each file focuses on one specific aspect of device functionality
+- **Easy Navigation**: Developers can quickly locate connection vs communication vs buffer logic
+- **Maintainability**: Changes to buffer logic don't affect connection or service code
+- **Team Development**: Multiple developers can work on different aspects simultaneously
+- **Testing**: Easier to create focused unit tests for specific functionality areas
 
 ## Future Enhancements
 
