@@ -35,12 +35,15 @@ namespace SensorGateway.Bluetooth
     /// </summary>
     public partial class BTDevice : IDisposable
     {
-        #region Events        
+        #region Events
+        public delegate void NotificationDataReceivedHandler(object sender, byte[]? data, string uuid);
+
+
         /// <summary>
         /// Event triggered when new notification data is received from the device.
         /// This event allows subscribers to handle incoming data asynchronously.
         /// </summary>
-        public event EventHandler<byte[]>? NotificationDataReceived;
+        public event NotificationDataReceivedHandler? NotificationDataReceived; // ✅ Add ? for nullable
         #endregion
 
         #region Properties

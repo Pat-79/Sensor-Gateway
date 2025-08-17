@@ -16,6 +16,13 @@ namespace SensorGateway.Bluetooth
     {
         #region private fields
         const int WAIT_LOOP_DELAY = 100;
+        const int ADAPTER_POWER_TIMEOUT_SECONDS = 5;           // ✅ New
+        const int MAX_CONNECTION_ATTEMPTS = 3;                 // ✅ New
+        const int CONNECTION_STABILIZATION_DELAY = 2000;      // ✅ New
+        const int CONNECTION_RETRY_DELAY = 1000;              // ✅ New
+        const int TOKEN_TIMEOUT_SECONDS = 120;                // ✅ New  
+        const int NOTIFICATION_WAIT_TIMEOUT_SECONDS = 30;     // ✅ New
+
         Device? _device = null;
         Adapter? _adapter = null;
 
@@ -26,11 +33,14 @@ namespace SensorGateway.Bluetooth
         GattCharacteristic? _responseChar = null;
         BTToken? _token = null;
         private bool _communicationInProgress = false;
+
+        // Add these new fields for notification waiting
+        private readonly ManualResetEventSlim _notificationReceived = new ManualResetEventSlim(false);
+        private bool _waitingForNotification = false;
         #endregion
 
         #region public properties
-        public bool CommunicationInProgress => _communicationInProgress;
-
+        public bool CommunicationInProgress { get { return _communicationInProgress; } }
 
         /// <summary>
         /// Gets the current size of the data buffer in bytes.
@@ -66,15 +76,15 @@ namespace SensorGateway.Bluetooth
             // Check and set power state in one operation if needed
             if (!await _adapter.GetPoweredAsync())
             {
-                await _adapter.SetPoweredAsync(true);
+                await _adapter.SetPoweredAsync(true).ConfigureAwait(false);
 
                 // Poll for power state instead of fixed delay
-                var timeout = TimeSpan.FromSeconds(5);
+                var timeout = TimeSpan.FromSeconds(ADAPTER_POWER_TIMEOUT_SECONDS);
                 var start = DateTime.UtcNow;
 
                 while (!await _adapter.GetPoweredAsync() && DateTime.UtcNow - start < timeout)
                 {
-                    await Task.Delay(WAIT_LOOP_DELAY);
+                    await Task.Delay(WAIT_LOOP_DELAY).ConfigureAwait(false);
                 }
 
                 if (!await _adapter.GetPoweredAsync())
@@ -124,7 +134,7 @@ namespace SensorGateway.Bluetooth
         /// </returns>
         public async Task<byte[]> GetBufferDataAsync()
         {
-            await _bufferSemaphore.WaitAsync();
+            await _bufferSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 return _dataBuffer.ToArray();
@@ -153,7 +163,7 @@ namespace SensorGateway.Bluetooth
         /// </returns>
         public async Task<long> GetBufferSizeAsync()
         {
-            await _bufferSemaphore.WaitAsync();
+            await _bufferSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 return _dataBuffer.Length;
@@ -171,7 +181,7 @@ namespace SensorGateway.Bluetooth
         /// <returns>A task that represents the asynchronous buffer clearing operation.</returns>
         public async Task ClearBufferAsync()
         {
-            await _bufferSemaphore.WaitAsync();
+            await _bufferSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 _dataBuffer.SetLength(0);
@@ -228,7 +238,17 @@ namespace SensorGateway.Bluetooth
                 await AppendToBufferAsync(e.Value);
 
                 // Trigger the notification event
-                OnNotificationDataReceived(e.Value);
+                var uuid = await characteristic.GetUUIDAsync();
+                OnNotificationDataReceived(uuid, e.Value);
+
+                // Signal that notification was received if we're waiting
+                // TODO: Check how we can detect the end of multiple notifications
+                /*
+                if (_waitingForNotification)
+                {
+                    _notificationReceived.Set();
+                }
+                */
             }
             catch (Exception ex)
             {
@@ -267,36 +287,32 @@ namespace SensorGateway.Bluetooth
                 }
             }
 
-            const int maxAttempts = 3;
-            const int stabilizationDelay = 2000;
-            const int retryDelay = 1000;
-
             // Try to connect to the device with retry logic
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS; attempt++)
             {
                 try
                 {
                     await _device.ConnectAsync();
-                    await Task.Delay(stabilizationDelay);
+                    await Task.Delay(CONNECTION_STABILIZATION_DELAY);
 
                     if (await IsConnectedAsync())
                     {
-                        _token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(120));
+                        _token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(TOKEN_TIMEOUT_SECONDS));
                         return _token != null;
                     }
                 }
                 //catch (Exception ex) when (attempt < maxAttempts)
-                catch when (attempt < maxAttempts)
+                catch when (attempt < MAX_CONNECTION_ATTEMPTS)
                 {
                     // Log exception for debugging (optional)
                     // Console.WriteLine($"Connection attempt {attempt} failed: {ex.Message}");
-                    await Task.Delay(retryDelay);
+                    await Task.Delay(CONNECTION_RETRY_DELAY);
                     continue;
                 }
                 // Let the final attempt throw the exception naturally
             }
 
-            throw new InvalidOperationException($"Failed to connect to device '{Address}' after {maxAttempts} attempts.");
+            throw new InvalidOperationException($"Failed to connect to device '{Address}' after {MAX_CONNECTION_ATTEMPTS} attempts.");
         }
 
         /// <summary>
@@ -586,8 +602,39 @@ namespace SensorGateway.Bluetooth
         /// <param name="characteristicUuid">The UUID of the characteristic to retrieve</param>
         public GattCharacteristic? GetCharacteristic(IGattService1 service, string characteristicUuid)
         {
-            var uuid = BlueZManager.NormalizeUUID(characteristicUuid);
-            return service.GetCharacteristicAsync(uuid).GetAwaiter().GetResult();
+            characteristicUuid = BlueZManager.NormalizeUUID(characteristicUuid);
+            return GetCharacteristicAsync(service, characteristicUuid).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Sets the service for the device, allowing it to communicate with the specified service.
+        /// </summary>
+        /// <param name="serviceUuid">The UUID of the service to set</param>
+        public async Task SetServiceAsync(string serviceUuid)
+        {
+            // Ensure that we're not interfering with another operation
+            if (CommunicationInProgress)
+            {
+                throw new InvalidOperationException("Communication is already in progress. Please wait for the current operation to complete.");
+            }
+
+            // Connect to service
+            serviceUuid = BlueZManager.NormalizeUUID(serviceUuid);
+            _service = await GetServiceAsync(serviceUuid);
+            if (_service == null)
+            {
+                throw new InvalidOperationException($"Service '{serviceUuid}' not found on device '{Address}'.");
+            }
+        }
+
+        /// <summary>
+        /// Sets the service for the device, allowing it to communicate with the specified service.
+        /// </summary>
+        /// <param name="serviceUuid">The UUID of the service to set</param>
+        public void SetService(string serviceUuid)
+        {
+            serviceUuid = BlueZManager.NormalizeUUID(serviceUuid);
+            SetServiceAsync(serviceUuid).GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -595,11 +642,8 @@ namespace SensorGateway.Bluetooth
         /// This method subscribes to characteristic value changes and attempts to retrieve any existing data.
         /// Initial data retrieval failure is handled gracefully and won't block the setup process.
         /// </summary>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown when the response characteristic is not initialized before calling this method.
-        /// </exception>
-        /// <returns>A task that represents the asynchronous notification setup operation.</returns>
-        public async Task SetNotificationsAsync(string serviceUuid, string characteristicUuid)
+        /// <param name="characteristicUuid">The UUID of the response characteristic to set up notifications for</param>
+        public async Task SetNotificationsAsync(string characteristicUuid)
         {
             // Ensure that we're not interfering with another operation
             if (CommunicationInProgress)
@@ -608,10 +652,9 @@ namespace SensorGateway.Bluetooth
             }
 
             // Connect to service and characteristic
-            _service = await GetServiceAsync(serviceUuid);
             if (_service == null)
             {
-                throw new InvalidOperationException($"Service '{serviceUuid}' not found on device '{Address}'.");
+                throw new InvalidOperationException($"Service not initialized. Call SetServiceAsync first to initialize the service connection.");
             }
 
             _responseChar = await GetCharacteristicAsync(_service, characteristicUuid);
@@ -625,8 +668,11 @@ namespace SensorGateway.Bluetooth
 
             // Subscribe to notifications
             _responseChar.Value += ReceiveNotificationData;
+            //_communicationInProgress = true; // Set communication in progress flag
 
             // Try to get initial value, but don't let failure block setup
+
+            /*
             try
             {
                 var initialData = await _responseChar.GetValueAsync();
@@ -634,12 +680,14 @@ namespace SensorGateway.Bluetooth
                 {
                     // Use ConfigureAwait(false) for better performance in library code
                     await AppendToBufferAsync(initialData).ConfigureAwait(false);
+                    OnNotificationDataReceived(await _responseChar.GetUUIDAsync(), initialData);
                 }
             }
             catch //(Exception ex)
             {
                 // Log the exception but don't fail setup - initial data is optional
             }
+            */
         }
 
         /// <summary>
@@ -647,13 +695,10 @@ namespace SensorGateway.Bluetooth
         /// This method subscribes to characteristic value changes and attempts to retrieve any existing data.
         /// Initial data retrieval failure is handled gracefully and won't block the setup process.
         /// </summary>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown when the response characteristic is not initialized before calling this method.
-        /// </exception>
-        /// <returns>A task that represents the asynchronous notification setup operation.</returns>
-        public void SetNotifications(string serviceUuid, string characteristicUuid)
+        /// <param name="characteristicUuid">The UUID of the response characteristic to set up notifications for</param>
+        public void SetNotifications(string characteristicUuid)
         {
-            SetNotificationsAsync(serviceUuid, characteristicUuid).GetAwaiter().GetResult();
+            SetNotificationsAsync(characteristicUuid).GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -692,64 +737,116 @@ namespace SensorGateway.Bluetooth
         }
 
         /// <summary>
-        /// WriteWithoutResponse replaces the characteristic value with a new value. The
-        /// call will return before all data has been written. A limited number of such
-        /// writes can be in flight at any given time. This call is also known as a
-        /// "write command" (as opposed to a write request).
+        /// WriteWithoutResponse is used to write data tot he device, without a response from the device.
+        /// This is a fire-and-forget operation, meaning the call will return before the data has been written.
+        /// However, it can optionally wait for notification data to be received before returning.
+        /// This method is also known as a "write command" (as opposed to a write request).
         /// </summary>
         /// <param name="data">The data to write to the characteristic</param>
-        /// <param name="stopCommunication">If true, stops communication after writing</param>
+        /// <param name="waitForNotificationDataReceived">If true, waits for notification data to be received before returning</param>
         /// <exception cref="ArgumentException">Thrown when data is null or empty.</exception>
         /// <exception cref="InvalidOperationException">
         /// Thrown when the device is not connected or another communication operation is in progress.
         /// </exception>
-        /// <exception cref="NotImplementedException">This method is not yet implemented.</exception>
-        public async Task WriteWithoutResponseAsync(byte[] data, bool stopCommunication = true)
+        public async Task WriteWithoutResponseAsync(byte[] data, bool waitForNotificationDataReceived = false)
         {
             if (data == null || data.Length == 0)
             {
                 throw new ArgumentException("Data cannot be null or empty", nameof(data));
             }
 
-            // Ensure the command characteristic is set before writing
             if (_commandChar == null)
             {
                 throw new InvalidOperationException("Command characteristic is not initialized. Please set the command characteristic before writing data.");
             }
 
-            // Ensure the device is connected before writing
             if (!await IsConnectedAsync())
             {
                 await ConnectAsync();
             }
 
-            // Check if communication is already in progress
             if (CommunicationInProgress)
             {
                 throw new InvalidOperationException("Communication is already in progress. Please wait for the current operation to complete.");
             }
 
-            await StartCommunicationAsync();
+            // Set communication in progress flag
+            _communicationInProgress = true;
 
-            await _commandChar.WriteValueAsync(data, new Dictionary<string, object>())
-                .ContinueWith(t =>
+            try
+            {
+                // If waiting for notification data, reset the event and set the waiting flag
+                // This allows us to wait for the notification data to be received after writing
+                if (waitForNotificationDataReceived)
                 {
-                    if (stopCommunication)
+                    _notificationReceived.Reset();
+                    _waitingForNotification = true;
+                }
+
+                // Write the data without artificial delay
+                await _commandChar.WriteValueAsync(data, new Dictionary<string, object>());
+
+                if (waitForNotificationDataReceived)
+                {
+                    // Use proper async waiting with cancellation support
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(NOTIFICATION_WAIT_TIMEOUT_SECONDS));
+                    
+                    try
                     {
-                        StopCommunication();
+                        await Task.Run(() => 
+                        {
+                            while (_waitingForNotification && _communicationInProgress && !cts.Token.IsCancellationRequested)
+                            {
+                                if (_notificationReceived.Wait(100, cts.Token))
+                                    break;
+                            }
+                        }, cts.Token);
                     }
-                    if (t.IsFaulted)
+                    catch (OperationCanceledException)
                     {
-                        // Handle any exceptions that occurred during the write operation
-                        Console.Error.WriteLine($"Error writing data: {t.Exception?.GetBaseException().Message}");
+                        throw new TimeoutException("Timed out waiting for notification data");
                     }
-                });
+                }
+            }
+            finally
+            {
+                _waitingForNotification = false;
+                // Let StopCommunication() handle _communicationInProgress = false
+            }
         }
 
+        /// <summary>
+        /// WriteWithoutResponse is used to write data tot he device, without a response from the device.
+        /// This is a fire-and-forget operation, meaning the call will return before the data has been written.
+        /// However, it can optionally wait for notification data to be received before returning.
+        /// This method is also known as a "write command" (as opposed to a write request).
+        /// </summary>
+        /// <param name="data">The data to write to the characteristic</param>
+        /// <param name="waitForNotificationDataReceived">If true, waits for notification data to be received before returning</param>
+        /// <exception cref="ArgumentException">Thrown when data is null or empty.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when the device is not connected or another communication operation is in progress.
+        /// </exception>
+        public void WriteWithoutResponse(byte[] data, bool waitForNotificationDataReceived = false)
+        {
+            WriteWithoutResponseAsync(data, waitForNotificationDataReceived).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Stops any ongoing communication by resetting the communication flag.
+        /// This method also releases any threads waiting for notification data.
+        /// </summary>
         public void StopCommunication()
         {
             // Stop any ongoing communication by resetting the communication flag
             _communicationInProgress = false;
+            
+            // Release any waiting WriteWithoutResponseAsync calls
+            if (_waitingForNotification)
+            {
+                _waitingForNotification = false;
+                _notificationReceived.Set(); // Wake up waiting threads
+            }
         }
 
         /// <summary>
@@ -760,6 +857,7 @@ namespace SensorGateway.Bluetooth
         {
             await ClearBufferAsync();
             _communicationInProgress = true;
+            //CommunicationInProgress = true;
         }
 
         /// <summary>
@@ -784,9 +882,9 @@ namespace SensorGateway.Bluetooth
         /// allowing subscribers to process the incoming data asynchronously.
         /// </summary>
         /// <param name="data">The raw notification data received from the device</param>
-        protected virtual void OnNotificationDataReceived(byte[] data)
+        protected virtual void OnNotificationDataReceived(string characteristicUuid, byte[] data)
         {
-            NotificationDataReceived?.Invoke(this, data);
+            NotificationDataReceived?.Invoke(this, data, characteristicUuid); // ✅ Correct order: sender, data, uuid
         }
         #endregion
 
@@ -800,8 +898,8 @@ namespace SensorGateway.Bluetooth
 
             _bufferSemaphore?.Dispose();
             _dataBuffer?.Dispose();
+            _notificationReceived?.Dispose(); // ✅ Add disposal of the event
         }
     }
     #endregion
-
 }
