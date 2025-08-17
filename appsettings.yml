@@ -1,12 +1,12 @@
 bluetooth:
-  adapterName: ""
+  adapterName: "hci0"
   discoveryTimeoutSeconds: 10
   connectionTimeoutSeconds: 30
   maxRetryAttempts: 3
   retryDelayMs: 2000
   deviceNameFilters:
-    - "DTT-"
     - "BT510-"
+    - "S1234-"
   serviceUuidFilters:
     - "569a1101-b87f-490c-92cb-11ba5ea5167c"
   minRssiThreshold: -90
