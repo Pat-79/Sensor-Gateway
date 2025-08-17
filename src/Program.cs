@@ -1,5 +1,5 @@
 using System;
-using GatewaySensor.Configuration;
+using SensorGateway.Configuration;
 
 
 class Program

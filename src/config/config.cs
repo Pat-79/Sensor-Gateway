@@ -4,7 +4,7 @@ using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace GatewaySensor.Configuration
+namespace SensorGateway.Configuration
 {
     /// <summary>
     /// Static configuration manager that loads application settings from a YAML file.

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using HashtagChris.DotNetBlueZ;
-using GatewaySensor.Sensors;
+using SensorGateway.Sensors;
 
-namespace GatewaySensor.Bluetooth
+namespace SensorGateway.Bluetooth
 {
     #region BTAddress Class
 

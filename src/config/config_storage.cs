@@ -1,4 +1,4 @@
-namespace GatewaySensor.Configuration
+namespace SensorGateway.Configuration
 {
     /// <summary>
     /// Data storage and persistence configuration.

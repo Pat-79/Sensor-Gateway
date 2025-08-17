@@ -1,6 +1,6 @@
 using System;
 
-namespace GatewaySensor.Bluetooth
+namespace SensorGateway.Bluetooth
 {
     /// <summary>
     /// Represents a Bluetooth MAC address with parsing and formatting capabilities.

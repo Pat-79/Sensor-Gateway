@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace GatewaySensor.Gateway
+namespace SensorGateway.Gateway
 {
     #region Measurement Source enum
     /// <summary>

@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using GatewaySensor.Bluetooth;
-using GatewaySensor.Gateway;
+using SensorGateway.Bluetooth;
+using SensorGateway.Gateway;
 
-namespace GatewaySensor.Sensors
+namespace SensorGateway.Sensors
 {
     /// <summary>
     /// Dummy sensor implementation for testing and development purposes.

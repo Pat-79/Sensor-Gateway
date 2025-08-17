@@ -1,4 +1,4 @@
-namespace GatewaySensor.Configuration
+namespace SensorGateway.Configuration
 {
     /// <summary>
     /// Network and communication configuration.

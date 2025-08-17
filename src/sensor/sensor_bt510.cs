@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using GatewaySensor.Bluetooth;
-using GatewaySensor.Gateway;
+using SensorGateway.Bluetooth;
+using SensorGateway.Gateway;
 
-namespace GatewaySensor.Sensors.bt510
+namespace SensorGateway.Sensors.bt510
 {
     /// <summary>
     /// BT510 sensor implementation that communicates via JSON-RPC over BLE

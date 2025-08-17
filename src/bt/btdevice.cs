@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using GatewaySensor.Sensors;
+using SensorGateway.Sensors;
 
-namespace GatewaySensor.Bluetooth
+namespace SensorGateway.Bluetooth
 {
 
     #region DeviceType Enumeration    

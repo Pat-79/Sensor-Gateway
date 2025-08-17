@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using GatewaySensor.Configuration;
+using SensorGateway.Configuration;
 using HashtagChris.DotNetBlueZ;
 using HashtagChris.DotNetBlueZ.Extensions;
 
-namespace GatewaySensor.Sensors.bt510
+namespace SensorGateway.Sensors.bt510
 {
     #region BTAddress Class
 

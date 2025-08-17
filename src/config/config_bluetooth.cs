@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace GatewaySensor.Configuration
+namespace SensorGateway.Configuration
 {
     /// <summary>
     /// Bluetooth scanning and connection configuration.

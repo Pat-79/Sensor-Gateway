@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace GatewaySensor.Bluetooth
+namespace SensorGateway.Bluetooth
 {
     /// <summary>
     /// Manages Bluetooth resources through a token-based system to prevent resource contention

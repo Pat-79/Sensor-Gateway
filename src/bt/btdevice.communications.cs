@@ -4,11 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using GatewaySensor.Configuration;
+using SensorGateway.Configuration;
 using HashtagChris.DotNetBlueZ;
 using HashtagChris.DotNetBlueZ.Extensions;
 
-namespace GatewaySensor.Bluetooth
+namespace SensorGateway.Bluetooth
 {
     #region BTDevice Class
 
@@ -758,7 +758,7 @@ namespace GatewaySensor.Bluetooth
         /// <returns>A task that represents the asynchronous communication start operation.</returns>
         public async Task StartCommunicationAsync()
         {
-            await ClearBufferAsync(); // ✅ Proper async call
+            await ClearBufferAsync();
             _communicationInProgress = true;
         }
 

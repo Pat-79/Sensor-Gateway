@@ -1,10 +1,10 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using GatewaySensor.Bluetooth;
-using GatewaySensor.Sensors.bt510;
+using SensorGateway.Bluetooth;
+using SensorGateway.Sensors.bt510;
 
-namespace GatewaySensor.Sensors
+namespace SensorGateway.Sensors
 {
     #region Factory Class
     /// <summary>

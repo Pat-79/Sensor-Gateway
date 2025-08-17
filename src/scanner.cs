@@ -4,12 +4,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using GatewaySensor.Bluetooth;
-using GatewaySensor.Configuration;
+using SensorGateway.Bluetooth;
+using SensorGateway.Configuration;
 using HashtagChris.DotNetBlueZ;
 using HashtagChris.DotNetBlueZ.Extensions;
 
-namespace GatewaySensor.Gateway
+namespace SensorGateway.Gateway
 {
     /// <summary>
     /// Singleton device scanner that continuously scans for BLE devices and spawns worker processes
