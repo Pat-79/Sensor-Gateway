@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using GatewaySensor.Bluetooth;
+using GatewaySensor.Sensors.bt510;
 
 namespace GatewaySensor.Sensors
 {

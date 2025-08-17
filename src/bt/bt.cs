@@ -1,4 +1,0 @@
-namespace GatewaySensor.Bluetooth
-{
-
-}

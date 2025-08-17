@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using GatewaySensor.Bluetooth;
 using GatewaySensor.Gateway;
 
-namespace GatewaySensor.Sensors
+namespace GatewaySensor.Sensors.bt510
 {
     /// <summary>
     /// BT510 sensor implementation that communicates via JSON-RPC over BLE
@@ -16,7 +16,7 @@ namespace GatewaySensor.Sensors
     /// - ParseAdvertisementAsync/ProcessAdvertisementAsync: No token needed (local processing)
     /// - GetMeasurementsAsync: Requires token if includes Log source
     /// </summary>
-    public class BT510Sensor : Sensor, IAsyncInitializable
+    public partial class BT510Sensor : Sensor, IAsyncInitializable
     {
         public BT510Sensor(BTDevice? device, SensorType sensorType) : base(device, sensorType)
         {

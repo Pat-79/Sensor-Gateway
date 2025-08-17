@@ -114,48 +114,61 @@ namespace GatewaySensor.Bluetooth
         }
 
         /// <summary>
-        /// Returns a token back to the pool, making it available for other operations.
+        /// Returns a token back to the pool asynchronously, making it available for other operations.
         /// This method is thread-safe and should be called when Bluetooth operations are complete.
+        /// </summary>
+        /// <param name="token">The token to return to the pool</param>
+        /// <exception cref="ArgumentNullException">Thrown when token is null</exception>
+        /// <exception cref="InvalidOperationException">Thrown when token is invalid or already returned</exception>
+        public async Task ReturnTokenAsync(BTToken token)
+        {
+            if (token == null)
+            throw new ArgumentNullException(nameof(token), "Token cannot be null");
+
+            ThrowIfDisposed();
+
+            if (!token.IsValid || token.IsReturned)
+            {
+            throw new InvalidOperationException($"Invalid token state. Valid: {token.IsValid}, Returned: {token.IsReturned}");
+            }
+
+            // Verify this token belongs to this manager
+            if (!_allTokens.ContainsKey(token.Id))
+            {
+            throw new InvalidOperationException($"Token {token.Id} does not belong to this BTManager instance");
+            }
+
+            try
+            {
+            // Mark token as returned and add back to pool
+            token.MarkAsReturned();
+            _availableTokens.Add(token);
+            
+            // Release semaphore - makes slot available for next GetTokenAsync() call
+            _tokenSemaphore.Release();
+            
+            Console.WriteLine($"🔄 BT Token {token.Id} returned to pool. Available: {AvailableTokens}/{TotalTokens}");
+            }
+            catch (Exception ex)
+            {
+            Console.WriteLine($"⚠️ Error returning token {token.Id}: {ex.Message}");
+            // Still release semaphore to prevent deadlock
+            _tokenSemaphore.Release();
+            throw;
+            }
+
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Synchronous version of ReturnTokenAsync for scenarios where async is not available
         /// </summary>
         /// <param name="token">The token to return to the pool</param>
         /// <exception cref="ArgumentNullException">Thrown when token is null</exception>
         /// <exception cref="InvalidOperationException">Thrown when token is invalid or already returned</exception>
         public void ReturnToken(BTToken token)
         {
-            if (token == null)
-                throw new ArgumentNullException(nameof(token), "Token cannot be null");
-
-            ThrowIfDisposed();
-
-            if (!token.IsValid || token.IsReturned)
-            {
-                throw new InvalidOperationException($"Invalid token state. Valid: {token.IsValid}, Returned: {token.IsReturned}");
-            }
-
-            // Verify this token belongs to this manager
-            if (!_allTokens.ContainsKey(token.Id))
-            {
-                throw new InvalidOperationException($"Token {token.Id} does not belong to this BTManager instance");
-            }
-
-            try
-            {
-                // Mark token as returned and add back to pool
-                token.MarkAsReturned();
-                _availableTokens.Add(token);
-                
-                // Release semaphore - makes slot available for next GetTokenAsync() call
-                _tokenSemaphore.Release();
-                
-                Console.WriteLine($"🔄 BT Token {token.Id} returned to pool. Available: {AvailableTokens}/{TotalTokens}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ Error returning token {token.Id}: {ex.Message}");
-                // Still release semaphore to prevent deadlock
-                _tokenSemaphore.Release();
-                throw;
-            }
+            ReturnTokenAsync(token).GetAwaiter().GetResult();
         }
 
         #endregion
