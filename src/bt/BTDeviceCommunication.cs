@@ -325,12 +325,23 @@ namespace SensorGateway.Bluetooth
         {
             try
             {
-                // Instead of direct buffer access, use your helper method
-                await _appendToBufferAsync(e.Value);
-
-                // Trigger the notification event
-                var uuid = await characteristic.GetUUIDAsync();
-                OnNotificationDataReceived(uuid, e.Value);
+                // For high-frequency data processing (1025 bytes from BT510 sensors),
+                // use memory pooling to reduce GC pressure during concurrent operations
+                if (e.Value?.Length > 100) // Use pooling for larger payloads  
+                {
+                    using var pooledData = BTMemoryPool.CreatePooledCopy(e.Value);
+                    await _appendToBufferAsync(pooledData.Array.AsSpan(0, pooledData.Length).ToArray());
+                    
+                    var uuid = await characteristic.GetUUIDAsync();
+                    OnNotificationDataReceived(uuid, e.Value); // Use original data for events
+                }
+                else if (e.Value != null)
+                {
+                    // For small payloads, pooling overhead isn't worth it
+                    await _appendToBufferAsync(e.Value);
+                    var uuid = await characteristic.GetUUIDAsync();
+                    OnNotificationDataReceived(uuid, e.Value);
+                }
 
                 // Signal that notification was received if we're waiting
                 // TODO: Check how we can detect the end of multiple notifications
@@ -343,7 +354,31 @@ namespace SensorGateway.Bluetooth
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error in ReceiveNotificationData: {ex}");
+                var characteristicUuid = "Unknown";
+                try
+                {
+                    characteristicUuid = await characteristic.GetUUIDAsync().ConfigureAwait(false);
+                }
+                catch { /* Ignore errors getting UUID */ }
+
+                var errorContext = new
+                {
+                    CharacteristicUuid = characteristicUuid,
+                    DataLength = e.Value?.Length ?? 0,
+                    Timestamp = DateTime.UtcNow
+                };
+                
+                Console.Error.WriteLine($"Error in ReceiveNotificationData: {ex.Message}");
+                Console.Error.WriteLine($"Context: Characteristic={errorContext.CharacteristicUuid}, " +
+                                      $"DataLength={errorContext.DataLength}, " +
+                                      $"Time={errorContext.Timestamp:yyyy-MM-dd HH:mm:ss} UTC");
+                
+                // Attempt recovery by resetting communication state
+                if (_communicationInProgress && _waitingForNotification)
+                {
+                    Console.WriteLine("🔄 Attempting communication recovery after notification error");
+                    StopCommunication();
+                }
             }
         }
 

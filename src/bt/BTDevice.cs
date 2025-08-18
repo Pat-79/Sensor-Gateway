@@ -208,6 +208,26 @@ namespace SensorGateway.Bluetooth
         /// <returns>A task that represents the asynchronous append operation.</returns>
         internal async Task AppendToBufferAsync(byte[] data) => await _buffer.AppendToBufferAsync(data);
 
+        /// <summary>
+        /// Asynchronously retrieves buffer contents using memory pooling for high-performance scenarios.
+        /// This method is optimized for frequent buffer access during data processing bursts.
+        /// </summary>
+        /// <returns>A pooled memory handle that must be disposed after use</returns>
+        public async Task<BTMemoryPool.PooledMemoryHandle> GetBufferDataPooledAsync() => await _buffer.GetBufferDataPooledAsync();
+
+        /// <summary>
+        /// Synchronously retrieves buffer contents using memory pooling.
+        /// Use this when already on a background thread to avoid async overhead.
+        /// </summary>
+        /// <returns>A pooled memory handle that must be disposed after use</returns>
+        public BTMemoryPool.PooledMemoryHandle GetBufferDataPooled() => _buffer.GetBufferDataPooled();
+
+        /// <summary>
+        /// Gets current memory pool usage statistics for performance monitoring.
+        /// </summary>
+        /// <returns>Memory pool statistics including rentals, returns, and size distribution</returns>
+        public static BTMemoryPool.PoolStatistics GetMemoryPoolStatistics() => BTMemoryPool.GetStatistics();
+
         #endregion
 
         #region Delegated Methods - Service Management

@@ -37,6 +37,7 @@ namespace SensorGateway.Bluetooth
 
         /// <summary>
         /// Asynchronously retrieves the current buffer contents as a byte array.
+        /// Uses memory pooling for efficient memory management.
         /// </summary>
         /// <returns>
         /// A task that represents the asynchronous operation. The task result contains
@@ -53,6 +54,35 @@ namespace SensorGateway.Bluetooth
             {
                 _bufferSemaphore.Release();
             }
+        }
+
+        /// <summary>
+        /// Gets buffer contents using memory pooling for high-performance scenarios.
+        /// The returned handle must be disposed to return memory to the pool.
+        /// </summary>
+        /// <returns>A pooled memory handle containing the buffer data</returns>
+        public async Task<BTMemoryPool.PooledMemoryHandle> GetBufferDataPooledAsync()
+        {
+            await _bufferSemaphore.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var bufferData = _dataBuffer.ToArray();
+                return BTMemoryPool.CreatePooledCopy(bufferData);
+            }
+            finally
+            {
+                _bufferSemaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// Synchronously gets buffer contents using memory pooling.
+        /// Use this when already on a background thread to avoid async overhead.
+        /// </summary>
+        /// <returns>A pooled memory handle containing the buffer data</returns>
+        public BTMemoryPool.PooledMemoryHandle GetBufferDataPooled()
+        {
+            return GetBufferDataPooledAsync().GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -129,6 +159,46 @@ namespace SensorGateway.Bluetooth
                 {
                     _bufferSemaphore.Release();
                 }
+            }
+        }
+
+        /// <summary>
+        /// High-performance append operation for large sensor data payloads using memory pooling.
+        /// Optimized for BT510 sensor data processing (1025 bytes → 128 measurements).
+        /// </summary>
+        /// <param name="data">Large sensor data to append efficiently</param>
+        /// <returns>A task that represents the asynchronous append operation</returns>
+        public async Task AppendLargeDataAsync(byte[] data)
+        {
+            if (data?.Length == 0 || data == null) return;
+
+            // For large data (>512 bytes), use pooled intermediate buffer to reduce allocations
+            if (data.Length > 512)
+            {
+                var tempArray = BTMemoryPool.RentArray(data.Length);
+                try
+                {
+                    data.CopyTo(tempArray, 0);
+                    
+                    await _bufferSemaphore.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        await _dataBuffer.WriteAsync(tempArray, 0, data.Length).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _bufferSemaphore.Release();
+                    }
+                }
+                finally
+                {
+                    BTMemoryPool.ReturnArray(tempArray);
+                }
+            }
+            else
+            {
+                // For smaller data, standard approach is more efficient
+                await AppendToBufferAsync(data);
             }
         }
 
