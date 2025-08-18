@@ -140,7 +140,6 @@ namespace SensorGateway.Bluetooth
             AdvertisementData?.Clear();
             if (Address != null)
             {
-                Address.Dispose();
                 Address = null;
             }
 

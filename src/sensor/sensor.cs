@@ -264,7 +264,6 @@ namespace SensorGateway.Sensors
             if (disposing)
             {
                 Device?.Dispose();
-                Address?.Dispose();
             }
 
             Device = null;

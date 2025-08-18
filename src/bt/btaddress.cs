@@ -8,15 +8,13 @@ namespace SensorGateway.Bluetooth
     /// and byte array representation of Bluetooth addresses.
     /// Implements IDisposable for proper resource cleanup.
     /// </summary>
-    public class BTAddress : IDisposable
+    public class BTAddress
     {
         /// <summary>
         /// Gets or sets the Bluetooth address as a 6-byte array.
         /// The bytes are stored in the same order as they appear in the string representation.
         /// </summary>
         public byte[] Address { get; set; } = Array.Empty<byte>();
-
-        private bool _disposed = false;
 
         /// <summary>
         /// Initializes a new BTAddress instance from a byte array.
@@ -78,17 +76,6 @@ namespace SensorGateway.Bluetooth
         public override string ToString()
         {
             return BitConverter.ToString(Address).Replace("-", ":");
-        }
-
-        /// <summary>
-        /// Disposes of the BTAddress instance and cleans up resources.
-        /// Resets the address array to empty to aid in garbage collection.
-        /// </summary>
-        public void Dispose()
-        {
-            if (_disposed) return;
-            Address = Array.Empty<byte>();
-            _disposed = true;
         }
     }
 }
