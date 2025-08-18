@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -53,8 +54,31 @@ namespace SensorGateway.Configuration
                 try
                 {
                     LoadConfiguration(configFilePath);
+                    
+                    // Validate the loaded configuration
+                    var validation = ConfigurationValidator.ValidateConfiguration();
+                    if (!validation.IsValid)
+                    {
+                        Console.WriteLine("⚠️  Configuration validation errors found:");
+                        foreach (var error in validation.Errors)
+                        {
+                            Console.WriteLine($"   ❌ {error}");
+                        }
+                        throw new InvalidOperationException($"Configuration validation failed: {validation.Errors.Count} error(s) found");
+                    }
+                    
+                    // Display warnings if any
+                    if (validation.Warnings.Any())
+                    {
+                        Console.WriteLine("⚠️  Configuration warnings:");
+                        foreach (var warning in validation.Warnings)
+                        {
+                            Console.WriteLine($"   ⚠️  {warning}");
+                        }
+                    }
+                    
                     _isInitialized = true;
-                    Console.WriteLine($"✅ Configuration loaded successfully from: {configFilePath}");
+                    Console.WriteLine($"✅ Configuration loaded and validated successfully from: {configFilePath}");
                 }
                 catch (Exception ex)
                 {
