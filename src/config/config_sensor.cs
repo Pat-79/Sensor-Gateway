@@ -55,5 +55,30 @@ namespace SensorGateway.Configuration
         /// Command retry delay in milliseconds
         /// </summary>
         public int CommandRetryDelayMs { get; set; } = 300;
+
+        /// <summary>
+        /// BLE service UUID for Laird custom service
+        /// </summary>
+        public string CustomServiceUuid { get; set; } = "569a1101-b87f-490c-92cb-11ba5ea5167c";
+
+        /// <summary>
+        /// BLE characteristic UUID for JSON-RPC responses
+        /// </summary>
+        public string JsonRpcResponseCharUuid { get; set; } = "569a2000-b87f-490c-92cb-11ba5ea5167c";
+
+        /// <summary>
+        /// BLE characteristic UUID for JSON-RPC commands
+        /// </summary>
+        public string JsonRpcCommandCharUuid { get; set; } = "569a2001-b87f-490c-92cb-11ba5ea5167c";
+
+        /// <summary>
+        /// Size of each log entry in bytes (BT510 uses 8-byte events)
+        /// </summary>
+        public int LogEntrySize { get; set; } = 8;
+
+        /// <summary>
+        /// Communication setup delay in milliseconds
+        /// </summary>
+        public int CommunicationSetupDelayMs { get; set; } = 100;
     }
 }

@@ -4,6 +4,7 @@ using System.Linq; // Add this for LINQ operations in DisplayMeasurements
 using System.Threading;
 using System.Threading.Tasks;
 using SensorGateway.Bluetooth;
+using SensorGateway.Configuration; // Add this using
 using SensorGateway.Gateway;
 
 namespace SensorGateway.Sensors.bt510
@@ -19,8 +20,20 @@ namespace SensorGateway.Sensors.bt510
     /// </summary>
     public partial class BT510Sensor : Sensor, IAsyncInitializable
     {
-        public BT510Sensor(BTDevice? device, SensorType sensorType) : base(device, sensorType)
+        private readonly SensorConfig _sensorConfig;
+        private readonly BT510Config _bt510Config;
+
+        /// <summary>
+        /// Initializes a new instance of the BT510Sensor with optional configuration
+        /// </summary>
+        /// <param name="device">The Bluetooth device</param>
+        /// <param name="sensorType">Type of sensor</param>
+        /// <param name="sensorConfig">Sensor configuration (optional)</param>
+        public BT510Sensor(BTDevice device, SensorType sensorType, SensorConfig? sensorConfig = null) 
+            : base(device, sensorType)
         {
+            _sensorConfig = sensorConfig ?? new SensorConfig();
+            _bt510Config = _sensorConfig.BT510; // Use the nested BT510 config
         }
 
         /// <summary>
@@ -268,12 +281,7 @@ namespace SensorGateway.Sensors.bt510
         }
 
         /// <summary>
-        /// Parses binary log data from BT510 into measurement objects
-        /// Based on the BT510 event structure: 8 bytes per event
-        /// - timestamp (4 bytes): Seconds from Jan 1, 1970
-        /// - data (2 bytes): Event-specific data
-        /// - type (1 byte): Event type ID
-        /// - salt (1 byte): Counter for simultaneous events
+        /// Parses binary log data from BT510 into measurement objects using configuration
         /// </summary>
         private IEnumerable<Measurement> ParseLogEntry(byte[] logData)
         {
@@ -281,8 +289,8 @@ namespace SensorGateway.Sensors.bt510
 
             try
             {
-                // Each event is 8 bytes long
-                const int eventSize = 8;
+                // ✅ Use your configuration instead of magic number
+                int eventSize = _bt510Config.LogEntrySize;
                 var eventCount = logData.Length / eventSize;
 
                 for (int i = 0; i < eventCount; i++)

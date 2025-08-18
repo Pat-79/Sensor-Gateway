@@ -73,12 +73,6 @@ namespace SensorGateway.Sensors.bt510
 
     public partial class BT510Sensor
     {
-        #region Constants
-        const string LAIRD_CUSTOM_SERVICE_UUID = "569a1101-b87f-490c-92cb-11ba5ea5167c";
-        const string LAIRD_JSONRPC_RESPONSE_CHAR_UUID = "569a2000-b87f-490c-92cb-11ba5ea5167c";
-        const string LAIRD_JSONRPC_COMMAND_CHAR_UUID = "569a2001-b87f-490c-92cb-11ba5ea5167c";
-        #endregion
-
         #region Private Fields
         private uint _nextId = 1;
         #endregion
@@ -102,13 +96,15 @@ namespace SensorGateway.Sensors.bt510
             if (Device == null)
                 throw new InvalidOperationException("Device is not initialized");
 
-            // Setup the service and characteristics as shown in TestProgram.cs
-            // These operations might be async in the BTDevice implementation
-            await Device.SetServiceAsync(LAIRD_CUSTOM_SERVICE_UUID).ConfigureAwait(false);
-            await Device.SetNotificationsAsync(LAIRD_JSONRPC_RESPONSE_CHAR_UUID).ConfigureAwait(false);
-            await Device.SetCommandCharacteristicAsync(LAIRD_JSONRPC_COMMAND_CHAR_UUID).ConfigureAwait(false);
+            // ✅ Use your configuration classes
+            Device.SetService(_bt510Config.CustomServiceUuid);
+            Device.SetNotifications(_bt510Config.JsonRpcResponseCharUuid);
+            Device.SetCommandCharacteristic(_bt510Config.JsonRpcCommandCharUuid);
             
             Device.NotificationDataReceived += OnNotificationDataReceived;
+            
+            // ✅ Use configurable delay
+            await Task.Delay(_bt510Config.CommunicationSetupDelayMs).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -334,16 +330,16 @@ namespace SensorGateway.Sensors.bt510
         }
 
         /// <summary>
-        /// Download all available logs in batches
+        /// Download all available logs using configuration values
         /// </summary>
         public async Task<List<byte[]>> DownloadAllLogsAsync()
         {
             var allLogs = new List<byte[]>();
             
-            // Prepare in FIFO mode
             await PrepareLogAsync(0).ConfigureAwait(false);
             
-            const int batchSize = 128; // Max size of a batch is 128 log entries: 8 bytes * 128 = 1024 bytes of data
+            // ✅ Use your configuration for batch size
+            int batchSize = _sensorConfig.MaxLogEntriesPerRequest;
             byte[]? batch;
             
             do
@@ -352,14 +348,8 @@ namespace SensorGateway.Sensors.bt510
                 if (batch?.Length > 0)
                 {
                     allLogs.Add(batch);
-                    // For acknowledgment, we need the number of entries, not the byte length
-                    // Each log entry is 8 bytes, so divide by 8
-                    var entryCount = batch.Length / 8;
-                    
-                    // For testing: no ack for the download, as this will clear the logs
-                    //await AckLogAsync(entryCount).ConfigureAwait(false);
                 }
-            } while (batch?.Length == (batchSize * 8)); // 128 entries × 8 bytes each = 1024 bytes
+            } while (batch?.Length == (batchSize * _bt510Config.LogEntrySize));
             
             return allLogs;
         }
