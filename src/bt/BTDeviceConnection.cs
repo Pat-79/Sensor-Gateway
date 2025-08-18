@@ -10,12 +10,50 @@ using HashtagChris.DotNetBlueZ.Extensions;
 
 namespace SensorGateway.Bluetooth
 {
-    public partial class BTDevice
+    /// <summary>
+    /// Handles Bluetooth device connection management and adapter initialization.
+    /// Follows Single Responsibility Principle by focusing solely on connection operations.
+    /// </summary>
+    public class BTDeviceConnection
     {
         #region Private Connection Fields
-        Device? _device = null;
-        Adapter? _adapter = null;
-        BTToken? _token = null;
+        private Device? _device = null;
+        private Adapter? _adapter = null;
+        private BTToken? _token = null;
+        private readonly Func<BTAddress?> _getAddress;
+        private readonly Func<Task> _clearBufferAsync;
+        #endregion
+
+        #region Properties
+        /// <summary>
+        /// Gets the current Bluetooth device.
+        /// </summary>
+        public Device? CurrentDevice => _device;
+
+        /// <summary>
+        /// Gets the current Bluetooth adapter.
+        /// </summary>
+        public Adapter? CurrentAdapter => _adapter;
+
+        /// <summary>
+        /// Gets the current BT token.
+        /// </summary>
+        public BTToken? CurrentToken => _token;
+        #endregion
+
+        #region Constructor
+        /// <summary>
+        /// Initializes a new instance of BTDeviceConnection with necessary dependencies.
+        /// </summary>
+        /// <param name="getAddress">Function to get the device address</param>
+        /// <param name="clearBufferAsync">Function to clear the device buffer</param>
+        public BTDeviceConnection(
+            Func<BTAddress?> getAddress,
+            Func<Task> clearBufferAsync)
+        {
+            _getAddress = getAddress;
+            _clearBufferAsync = clearBufferAsync;
+        }
         #endregion
 
         #region Connection Management Methods
@@ -43,12 +81,12 @@ namespace SensorGateway.Bluetooth
                 await _adapter.SetPoweredAsync(true).ConfigureAwait(false);
 
                 // Poll for power state instead of fixed delay
-                var timeout = TimeSpan.FromSeconds(ADAPTER_POWER_TIMEOUT_SECONDS);
+                var timeout = TimeSpan.FromSeconds(BTDeviceConstants.ADAPTER_POWER_TIMEOUT_SECONDS);
                 var start = DateTime.UtcNow;
 
                 while (!await _adapter.GetPoweredAsync() && DateTime.UtcNow - start < timeout)
                 {
-                    await Task.Delay(WAIT_LOOP_DELAY).ConfigureAwait(false);
+                    await Task.Delay(BTDeviceConstants.WAIT_LOOP_DELAY).ConfigureAwait(false);
                 }
 
                 if (!await _adapter.GetPoweredAsync())
@@ -66,7 +104,7 @@ namespace SensorGateway.Bluetooth
         /// Thrown when the adapter fails to initialize, device address is not set, or the device is not found.
         /// </exception>
         /// <returns>A task that represents the asynchronous device initialization operation.</returns>
-        private async Task InitializeDeviceAsync()
+        public async Task InitializeDeviceAsync()
         {
             // Ensure the adapter is initialized
             if (_adapter == null)
@@ -79,13 +117,14 @@ namespace SensorGateway.Bluetooth
             }
 
             // Validate address and get device in one operation
-            _device = Address != null
-                ? await _adapter.GetDeviceAsync(Address.ToString())
+            var address = _getAddress();
+            _device = address != null
+                ? await _adapter.GetDeviceAsync(address.ToString())
                 : throw new InvalidOperationException("Device address is not set.");
 
             if (_device == null)
             {
-                throw new InvalidOperationException($"Bluetooth device with address '{Address}' not found.");
+                throw new InvalidOperationException($"Bluetooth device with address '{address}' not found.");
             }
         }
 
@@ -115,31 +154,32 @@ namespace SensorGateway.Bluetooth
             }
 
             // Try to connect to the device with retry logic
-            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS; attempt++)
+            for (int attempt = 1; attempt <= BTDeviceConstants.MAX_CONNECTION_ATTEMPTS; attempt++)
             {
                 try
                 {
                     await _device.ConnectAsync();
-                    await Task.Delay(CONNECTION_STABILIZATION_DELAY);
+                    await Task.Delay(BTDeviceConstants.CONNECTION_STABILIZATION_DELAY);
 
                     if (await IsConnectedAsync())
                     {
-                        _token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(TOKEN_TIMEOUT_SECONDS));
+                        _token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(BTDeviceConstants.TOKEN_TIMEOUT_SECONDS));
                         return _token != null;
                     }
                 }
                 //catch (Exception ex) when (attempt < maxAttempts)
-                catch when (attempt < MAX_CONNECTION_ATTEMPTS)
+                catch when (attempt < BTDeviceConstants.MAX_CONNECTION_ATTEMPTS)
                 {
                     // Log exception for debugging (optional)
                     // Console.WriteLine($"Connection attempt {attempt} failed: {ex.Message}");
-                    await Task.Delay(CONNECTION_RETRY_DELAY);
+                    await Task.Delay(BTDeviceConstants.CONNECTION_RETRY_DELAY);
                     continue;
                 }
                 // Let the final attempt throw the exception naturally
             }
 
-            throw new InvalidOperationException($"Failed to connect to device '{Address}' after {MAX_CONNECTION_ATTEMPTS} attempts.");
+            var address = _getAddress();
+            throw new InvalidOperationException($"Failed to connect to device '{address}' after {BTDeviceConstants.MAX_CONNECTION_ATTEMPTS} attempts.");
         }
 
         /// <summary>
@@ -183,7 +223,7 @@ namespace SensorGateway.Bluetooth
                 _token = null;
             }
 
-            await ClearBufferAsync();
+            await _clearBufferAsync();
         }
 
         /// <summary>
@@ -204,7 +244,8 @@ namespace SensorGateway.Bluetooth
         public async Task<bool> IsConnectedAsync()
         {
             // Check if we have a valid address
-            if (Address == null)
+            var address = _getAddress();
+            if (address == null)
             {
                 return false; // No address set, cannot be connected
             }
@@ -234,6 +275,23 @@ namespace SensorGateway.Bluetooth
             return IsConnectedAsync().GetAwaiter().GetResult();
         }
 
+        #endregion
+
+        #region IDisposable Support
+        /// <summary>
+        /// Disposes of the connection resources.
+        /// </summary>
+        public void Dispose()
+        {
+            try
+            {
+                Disconnect();
+            }
+            catch
+            {
+                // Ignore errors during disposal
+            }
+        }
         #endregion
     }
 }

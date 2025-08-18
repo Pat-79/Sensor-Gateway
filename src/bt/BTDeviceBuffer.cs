@@ -1,23 +1,23 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using SensorGateway.Configuration;
-using HashtagChris.DotNetBlueZ;
-using HashtagChris.DotNetBlueZ.Extensions;
 
 namespace SensorGateway.Bluetooth
 {
-    public partial class BTDevice
+    /// <summary>
+    /// Handles thread-safe buffer management for Bluetooth device data.
+    /// Follows Single Responsibility Principle by focusing solely on buffer operations.
+    /// </summary>
+    public class BTDeviceBuffer : IDisposable
     {
-        #region Private Buffer Fields
+        #region Private Fields
         private readonly MemoryStream _dataBuffer = new MemoryStream();
         private readonly SemaphoreSlim _bufferSemaphore = new SemaphoreSlim(1, 1);
+        private bool _disposed = false;
         #endregion
 
-        #region Buffer Management Properties
+        #region Properties
 
         /// <summary>
         /// Gets the current size of the data buffer in bytes.
@@ -116,7 +116,7 @@ namespace SensorGateway.Bluetooth
         /// </summary>
         /// <param name="data">The byte array to append to the buffer. Null or empty arrays are ignored.</param>
         /// <returns>A task that represents the asynchronous append operation.</returns>
-        private async Task AppendToBufferAsync(byte[] data)
+        public async Task AppendToBufferAsync(byte[] data)
         {
             if (data?.Length > 0)
             {
@@ -129,6 +129,33 @@ namespace SensorGateway.Bluetooth
                 {
                     _bufferSemaphore.Release();
                 }
+            }
+        }
+
+        #endregion
+
+        #region IDisposable Implementation
+
+        /// <summary>
+        /// Releases all resources used by the BTDeviceBuffer.
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Releases the unmanaged resources used by the BTDeviceBuffer and optionally releases the managed resources.
+        /// </summary>
+        /// <param name="disposing">true to release both managed and unmanaged resources; false to release only unmanaged resources.</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _bufferSemaphore?.Dispose();
+                _dataBuffer?.Dispose();
+                _disposed = true;
             }
         }
 

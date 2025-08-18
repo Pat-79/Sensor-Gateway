@@ -41,7 +41,7 @@ namespace SensorGateway.Sensors
                 throw new FactoryException("Device cannot be null for physical sensors. Use CreateSensor(SensorType.Dummy) for dummy sensor.");
             }
 
-            var btDevice = BTDevice.FromObject(device) ?? throw new FactoryException("Failed to create BTDevice from provided object.");
+            var btDevice = BTDeviceFactory.FromObject(device) ?? throw new FactoryException("Failed to create BTDevice from provided object.");
 
             // Determine the sensor type asynchronously
             SensorType sensorType = await DetermineSensorTypeAwait(device);
@@ -85,7 +85,7 @@ namespace SensorGateway.Sensors
 
             // Here we could add logic to determine if the device corresponds to a BT510 or other sensor
             // For now, we assume BT510 if a valid address is provided
-            var sensorType = BTDevice.DetermineDeviceType(device) switch
+            var sensorType = BTDeviceFactory.DetermineDeviceType(device) switch
             {
                 DeviceType.BT510 => SensorType.BT510,
                 DeviceType.Dummy => SensorType.Dummy,

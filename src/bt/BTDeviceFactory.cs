@@ -7,9 +7,11 @@ using SensorGateway.Sensors;
 
 namespace SensorGateway.Bluetooth
 {
-    #region BTAddress Class
-
-    public partial class BTDevice
+    /// <summary>
+    /// Factory class for creating BTDevice instances from various device sources.
+    /// Follows Single Responsibility Principle by focusing solely on device creation.
+    /// </summary>
+    public static class BTDeviceFactory
     {
         #region Factory Methods
         /// <summary>
@@ -198,5 +200,4 @@ namespace SensorGateway.Bluetooth
         }
         #endregion
     }
-    #endregion
 }

@@ -10,10 +10,46 @@ using HashtagChris.DotNetBlueZ.Extensions;
 
 namespace SensorGateway.Bluetooth
 {
-    public partial class BTDevice
+    /// <summary>
+    /// Handles Bluetooth GATT service and characteristic management.
+    /// Follows Single Responsibility Principle by focusing solely on service discovery and access.
+    /// </summary>
+    public class BTDeviceServices
     {
         #region Private Service Fields
-        IGattService1? _service = null;
+        private IGattService1? _service = null;
+        private readonly Func<Task<bool>> _isConnectedAsync;
+        private readonly Func<Task> _connectAsync;
+        private readonly Func<bool> _getCommunicationInProgress;
+        private readonly Func<Task<Device?>> _getDevice;
+        #endregion
+
+        #region Properties
+        /// <summary>
+        /// Gets the currently selected service.
+        /// </summary>
+        public IGattService1? CurrentService => _service;
+        #endregion
+
+        #region Constructor
+        /// <summary>
+        /// Initializes a new instance of BTDeviceServices with necessary dependencies.
+        /// </summary>
+        /// <param name="isConnectedAsync">Function to check if device is connected</param>
+        /// <param name="connectAsync">Function to connect to device</param>
+        /// <param name="getCommunicationInProgress">Function to check if communication is in progress</param>
+        /// <param name="getDevice">Function to get the BlueZ device</param>
+        public BTDeviceServices(
+            Func<Task<bool>> isConnectedAsync,
+            Func<Task> connectAsync,
+            Func<bool> getCommunicationInProgress,
+            Func<Task<Device?>> getDevice)
+        {
+            _isConnectedAsync = isConnectedAsync;
+            _connectAsync = connectAsync;
+            _getCommunicationInProgress = getCommunicationInProgress;
+            _getDevice = getDevice;
+        }
         #endregion
 
         #region Service and Characteristic Management
@@ -27,12 +63,18 @@ namespace SensorGateway.Bluetooth
         /// </returns>
         public async Task<IReadOnlyList<string>> GetServicesAsync()
         {
-            if (!await IsConnectedAsync())
+            if (!await _isConnectedAsync())
             {
-                await ConnectAsync();
+                await _connectAsync();
             }
 
-            var services = await _device.GetServicesAsync();
+            var device = await _getDevice();
+            if (device == null)
+            {
+                throw new InvalidOperationException("Device not initialized");
+            }
+
+            var services = await device.GetServicesAsync();
             var serviceUuids = await Task.WhenAll(services.Select(s => s.GetUUIDAsync()));
             return serviceUuids.ToList().AsReadOnly();
         }
@@ -56,16 +98,16 @@ namespace SensorGateway.Bluetooth
         {
             var uuid = BlueZManager.NormalizeUUID(serviceUuid);
             var service = await GetServiceAsync(uuid);
-            return service != null; // Return true if the service is found, false otherwise
+            return service != null;
         }
 
         /// <summary>
         /// Synchronously checks if the device has a specific service identified by the provided UUID.
         /// </summary>
         /// <param name="serviceUuid">The UUID of the service to check.</param>
+        /// <returns>True if the service exists, false otherwise.</returns>
         public bool HasService(string serviceUuid)
         {
-            // Use the asynchronous method to check for service existence
             return HasServiceAsync(serviceUuid).GetAwaiter().GetResult();
         }
 
@@ -84,12 +126,18 @@ namespace SensorGateway.Bluetooth
                 return null;
             }
 
-            if (!await IsConnectedAsync())
+            if (!await _isConnectedAsync())
             {
-                await ConnectAsync();
+                await _connectAsync();
             }
 
-            return await _device.GetServiceAsync(uuid);
+            var device = await _getDevice();
+            if (device == null)
+            {
+                throw new InvalidOperationException("Device not initialized");
+            }
+
+            return await device.GetServiceAsync(uuid);
         }
 
         /// <summary>
@@ -101,37 +149,37 @@ namespace SensorGateway.Bluetooth
         /// </returns>
         public IGattService1? GetService(string serviceUuid)
         {
-            var uuid = BlueZManager.NormalizeUUID(serviceUuid);
-            return GetServiceAsync(uuid).GetAwaiter().GetResult();
+            return GetServiceAsync(serviceUuid).GetAwaiter().GetResult();
         }
 
         /// <summary>
-        /// Checks if the device has a specific characteristic within a service identified by the provided UUIDs.
+        /// Sets the service for the device, allowing it to communicate with the specified service.
         /// </summary>
-        /// <param name="serviceUuid">The UUID of the service to check</param>
-        /// <param name="characteristicUuid">The UUID of the characteristic to check</param>
-        /// <returns>True if the characteristic exists within the service, otherwise false</returns>
-        /// <exception cref="NotImplementedException">This method is not yet implemented.</exception>
-        public async Task<bool> HasCharacteristicAsync(IGattService1 service, string characteristicUuid)
+        /// <param name="serviceUuid">The UUID of the service to set</param>
+        public async Task SetServiceAsync(string serviceUuid)
         {
-            var uuid = BlueZManager.NormalizeUUID(characteristicUuid);
-            var characteristic = await service.GetCharacteristicAsync(uuid);
-            return characteristic != null; // Return true if the characteristic is found, false otherwise
+            // Ensure that we're not interfering with another operation
+            if (_getCommunicationInProgress())
+            {
+                throw new InvalidOperationException("Communication is already in progress. Please wait for the current operation to complete.");
+            }
+
+            // Connect to service
+            serviceUuid = BlueZManager.NormalizeUUID(serviceUuid);
+            _service = await GetServiceAsync(serviceUuid);
+            if (_service == null)
+            {
+                throw new InvalidOperationException($"Service '{serviceUuid}' not found on device.");
+            }
         }
 
         /// <summary>
-        /// Synchronously checks if the device has a specific characteristic within a service identified by the provided
-        /// UUIDs.
+        /// Sets the service for the device, allowing it to communicate with the specified service.
         /// </summary>
-        /// <param name="service">The service to check for the characteristic</param>
-        /// <param name="characteristicUuid">The UUID of the characteristic to check</param>
-        /// <returns>
-        /// True if the characteristic exists within the service, otherwise false
-        /// </returns>
-        public bool HasCharacteristic(IGattService1 service, string characteristicUuid)
+        /// <param name="serviceUuid">The UUID of the service to set</param>
+        public void SetService(string serviceUuid)
         {
-            var uuid = BlueZManager.NormalizeUUID(characteristicUuid);
-            return HasCharacteristicAsync(service, uuid).GetAwaiter().GetResult();
+            SetServiceAsync(serviceUuid).GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -149,9 +197,9 @@ namespace SensorGateway.Bluetooth
                 return new List<string>().AsReadOnly();
             }
 
-            if (!await IsConnectedAsync())
+            if (!await _isConnectedAsync())
             {
-                await ConnectAsync();
+                await _connectAsync();
             }
 
             var gattService = await GetServiceAsync(uuid);
@@ -196,9 +244,9 @@ namespace SensorGateway.Bluetooth
                 return null;
             }
 
-            if (!await IsConnectedAsync())
+            if (!await _isConnectedAsync())
             {
-                await ConnectAsync();
+                await _connectAsync();
             }
 
             return await service.GetCharacteristicAsync(uuid);
@@ -211,39 +259,34 @@ namespace SensorGateway.Bluetooth
         /// <param name="characteristicUuid">The UUID of the characteristic to retrieve</param>
         public GattCharacteristic? GetCharacteristic(IGattService1 service, string characteristicUuid)
         {
-            characteristicUuid = BlueZManager.NormalizeUUID(characteristicUuid);
             return GetCharacteristicAsync(service, characteristicUuid).GetAwaiter().GetResult();
         }
 
         /// <summary>
-        /// Sets the service for the device, allowing it to communicate with the specified service.
+        /// Checks if the device has a specific characteristic within a service identified by the provided UUIDs.
         /// </summary>
-        /// <param name="serviceUuid">The UUID of the service to set</param>
-        public async Task SetServiceAsync(string serviceUuid)
+        /// <param name="service">The service to check for the characteristic</param>
+        /// <param name="characteristicUuid">The UUID of the characteristic to check</param>
+        /// <returns>True if the characteristic exists within the service, otherwise false</returns>
+        public async Task<bool> HasCharacteristicAsync(IGattService1 service, string characteristicUuid)
         {
-            // Ensure that we're not interfering with another operation
-            if (CommunicationInProgress)
-            {
-                throw new InvalidOperationException("Communication is already in progress. Please wait for the current operation to complete.");
-            }
-
-            // Connect to service
-            serviceUuid = BlueZManager.NormalizeUUID(serviceUuid);
-            _service = await GetServiceAsync(serviceUuid);
-            if (_service == null)
-            {
-                throw new InvalidOperationException($"Service '{serviceUuid}' not found on device '{Address}'.");
-            }
+            var uuid = BlueZManager.NormalizeUUID(characteristicUuid);
+            var characteristic = await service.GetCharacteristicAsync(uuid);
+            return characteristic != null;
         }
 
         /// <summary>
-        /// Sets the service for the device, allowing it to communicate with the specified service.
+        /// Synchronously checks if the device has a specific characteristic within a service identified by the provided
+        /// UUIDs.
         /// </summary>
-        /// <param name="serviceUuid">The UUID of the service to set</param>
-        public void SetService(string serviceUuid)
+        /// <param name="service">The service to check for the characteristic</param>
+        /// <param name="characteristicUuid">The UUID of the characteristic to check</param>
+        /// <returns>
+        /// True if the characteristic exists within the service, otherwise false
+        /// </returns>
+        public bool HasCharacteristic(IGattService1 service, string characteristicUuid)
         {
-            serviceUuid = BlueZManager.NormalizeUUID(serviceUuid);
-            SetServiceAsync(serviceUuid).GetAwaiter().GetResult();
+            return HasCharacteristicAsync(service, characteristicUuid).GetAwaiter().GetResult();
         }
 
         #endregion

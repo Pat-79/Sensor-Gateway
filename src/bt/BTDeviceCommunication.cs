@@ -10,22 +10,86 @@ using HashtagChris.DotNetBlueZ.Extensions;
 
 namespace SensorGateway.Bluetooth
 {
-    public partial class BTDevice
+    /// <summary>
+    /// Handles Bluetooth device communication protocols and characteristic operations.
+    /// Follows Single Responsibility Principle by focusing solely on BLE communication.
+    /// </summary>
+    public class BTDeviceCommunication
     {
         #region Private Communication Fields
-        GattCharacteristic? _commandChar = null;
-        GattCharacteristic? _responseChar = null;
+        private GattCharacteristic? _commandChar = null;
+        private GattCharacteristic? _responseChar = null;
         private bool _communicationInProgress = false;
 
         // Notification waiting fields
         private readonly ManualResetEventSlim _notificationReceived = new ManualResetEventSlim(false);
         private bool _waitingForNotification = false;
+
+        // Dependencies
+        private readonly Func<HashtagChris.DotNetBlueZ.IGattService1?> _getCurrentService;
+        private readonly Func<HashtagChris.DotNetBlueZ.IGattService1, string, Task<GattCharacteristic?>> _getCharacteristicAsync;
+        private readonly Func<Task> _clearBufferAsync;
+        private readonly Func<byte[], Task> _appendToBufferAsync;
+        private readonly Func<Task<bool>> _isConnectedAsync;
+        private readonly Func<Task<bool>> _connectAsync;
+        private readonly Action<string, byte[]> _onNotificationDataReceived;
         #endregion
 
-        #region Communication Properties
+        #region Events
+        public delegate void NotificationDataReceivedHandler(object sender, byte[]? data, string uuid);
 
-        public bool CommunicationInProgress { get { return _communicationInProgress; } }
+        /// <summary>
+        /// Event triggered when new notification data is received from the device.
+        /// This event allows subscribers to handle incoming data asynchronously.
+        /// </summary>
+        public event NotificationDataReceivedHandler? NotificationDataReceived;
+        #endregion
 
+        #region Properties
+        /// <summary>
+        /// Gets whether communication is currently in progress.
+        /// </summary>
+        public bool CommunicationInProgress => _communicationInProgress;
+
+        /// <summary>
+        /// Gets the current command characteristic.
+        /// </summary>
+        public GattCharacteristic? CommandCharacteristic => _commandChar;
+
+        /// <summary>
+        /// Gets the current response characteristic.
+        /// </summary>
+        public GattCharacteristic? ResponseCharacteristic => _responseChar;
+        #endregion
+
+        #region Constructor
+        /// <summary>
+        /// Initializes a new instance of BTDeviceCommunication with necessary dependencies.
+        /// </summary>
+        /// <param name="getCurrentService">Function to get the current service</param>
+        /// <param name="getCharacteristicAsync">Function to get a characteristic from a service</param>
+        /// <param name="clearBufferAsync">Function to clear the device buffer</param>
+        /// <param name="appendToBufferAsync">Function to append data to buffer</param>
+        /// <param name="isConnectedAsync">Function to check connection status</param>
+        /// <param name="connectAsync">Function to connect to device</param>
+        /// <param name="onNotificationDataReceived">Action to handle notification events</param>
+        public BTDeviceCommunication(
+            Func<HashtagChris.DotNetBlueZ.IGattService1?> getCurrentService,
+            Func<HashtagChris.DotNetBlueZ.IGattService1, string, Task<GattCharacteristic?>> getCharacteristicAsync,
+            Func<Task> clearBufferAsync,
+            Func<byte[], Task> appendToBufferAsync,
+            Func<Task<bool>> isConnectedAsync,
+            Func<Task<bool>> connectAsync,
+            Action<string, byte[]> onNotificationDataReceived)
+        {
+            _getCurrentService = getCurrentService;
+            _getCharacteristicAsync = getCharacteristicAsync;
+            _clearBufferAsync = clearBufferAsync;
+            _appendToBufferAsync = appendToBufferAsync;
+            _isConnectedAsync = isConnectedAsync;
+            _connectAsync = connectAsync;
+            _onNotificationDataReceived = onNotificationDataReceived;
+        }
         #endregion
 
         #region Communication Methods
@@ -45,19 +109,20 @@ namespace SensorGateway.Bluetooth
             }
 
             // Connect to service and characteristic
-            if (_service == null)
+            var service = _getCurrentService();
+            if (service == null)
             {
                 throw new InvalidOperationException($"Service not initialized. Call SetServiceAsync first to initialize the service connection.");
             }
 
-            _responseChar = await GetCharacteristicAsync(_service, characteristicUuid);
+            _responseChar = await _getCharacteristicAsync(service, characteristicUuid);
             if (_responseChar == null)
             {
                 throw new InvalidOperationException("Response characteristic not initialized");
             }
 
             // Clear the data buffer before starting notifications
-            await ClearBufferAsync();
+            await _clearBufferAsync();
 
             // Subscribe to notifications
             _responseChar.Value += ReceiveNotificationData;
@@ -87,13 +152,14 @@ namespace SensorGateway.Bluetooth
             }
 
             // Connect to service and characteristic
-            if (_service == null)
+            var service = _getCurrentService();
+            if (service == null)
             {
                 throw new InvalidOperationException($"Service not initialized. Call SetNotificationsAsync first to initialize the service connection.");
             }
 
             characteristicUuid = BlueZManager.NormalizeUUID(characteristicUuid);
-            _commandChar = await GetCharacteristicAsync(_service, characteristicUuid);
+            _commandChar = await _getCharacteristicAsync(service, characteristicUuid);
             if (_commandChar == null)
             {
                 throw new InvalidOperationException($"Command characteristic '{characteristicUuid}' not found in service.");
@@ -133,9 +199,9 @@ namespace SensorGateway.Bluetooth
                 throw new InvalidOperationException("Command characteristic is not initialized. Please set the command characteristic before writing data.");
             }
 
-            if (!await IsConnectedAsync())
+            if (!await _isConnectedAsync())
             {
-                await ConnectAsync();
+                await _connectAsync();
             }
 
             if (CommunicationInProgress)
@@ -162,7 +228,7 @@ namespace SensorGateway.Bluetooth
                 if (waitForNotificationDataReceived)
                 {
                     // Use proper async waiting with cancellation support
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(NOTIFICATION_WAIT_TIMEOUT_SECONDS));
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(BTDeviceConstants.NOTIFICATION_WAIT_TIMEOUT_SECONDS));
                     
                     try
                     {
@@ -228,7 +294,7 @@ namespace SensorGateway.Bluetooth
         /// <returns>A task that represents the asynchronous communication start operation.</returns>
         public async Task StartCommunicationAsync()
         {
-            await ClearBufferAsync();
+            await _clearBufferAsync();
             _communicationInProgress = true;
         }
 
@@ -260,7 +326,7 @@ namespace SensorGateway.Bluetooth
             try
             {
                 // Instead of direct buffer access, use your helper method
-                await AppendToBufferAsync(e.Value);
+                await _appendToBufferAsync(e.Value);
 
                 // Trigger the notification event
                 var uuid = await characteristic.GetUUIDAsync();
@@ -290,8 +356,20 @@ namespace SensorGateway.Bluetooth
         protected virtual void OnNotificationDataReceived(string characteristicUuid, byte[] data)
         {
             NotificationDataReceived?.Invoke(this, data, characteristicUuid);
+            _onNotificationDataReceived(characteristicUuid, data);
         }
 
+        #endregion
+
+        #region IDisposable Support
+        /// <summary>
+        /// Disposes of the communication resources.
+        /// </summary>
+        public void Dispose()
+        {
+            StopCommunication();
+            _notificationReceived?.Dispose();
+        }
         #endregion
     }
 }
