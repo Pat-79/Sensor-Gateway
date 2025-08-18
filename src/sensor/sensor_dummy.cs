@@ -129,53 +129,7 @@ namespace SensorGateway.Sensors
 
         #region Virtual Method Overrides (Optional - these are virtual in base class)
 
-        /// <summary>
-        /// Synchronous version of DownloadLog for dummy sensor
-        /// </summary>
-        public override IEnumerable<Measurement> DownloadLog()
-        {
-            return DownloadLogAsync().GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// Synchronous version of ProcessLog for dummy sensor
-        /// </summary>
-        public override IEnumerable<Measurement> ProcessLog()
-        {
-            return ProcessLogAsync().GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// Synchronous version of ParseAdvertisement for dummy sensor
-        /// </summary>
-        public override IEnumerable<Measurement> ParseAdvertisement()
-        {
-            return ParseAdvertisementAsync().GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// Synchronous version of ProcessAdvertisement for dummy sensor
-        /// </summary>
-        public override IEnumerable<Measurement> ProcessAdvertisement()
-        {
-            return ProcessAdvertisementAsync().GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// Synchronous version of GetConfiguration for dummy sensor
-        /// </summary>
-        public override Dictionary<string, object> GetConfiguration()
-        {
-            return GetConfigurationAsync().GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// Synchronous version of UpdateConfiguration for dummy sensor
-        /// </summary>
-        public override bool UpdateConfiguration(Dictionary<string, object> configuration)
-        {
-            return UpdateConfigurationAsync(configuration).GetAwaiter().GetResult();
-        }
+        // Removed dangerous sync-over-async patterns
 
         #endregion
 
