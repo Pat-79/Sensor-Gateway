@@ -1,15 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq; // Add this for Last() extension method
+using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SensorGateway.Configuration;
-using HashtagChris.DotNetBlueZ;
-using HashtagChris.DotNetBlueZ.Extensions;
+using System.Threading;
+using System.Threading.Tasks;
 using SensorGateway.Bluetooth;
 
 namespace SensorGateway.Sensors.bt510
@@ -96,15 +92,17 @@ namespace SensorGateway.Sensors.bt510
             if (Device == null)
                 throw new InvalidOperationException("Device is not initialized");
 
-            // ✅ Use your configuration classes
-            Device.SetService(_bt510Config.CustomServiceUuid);
-            Device.SetNotifications(_bt510Config.JsonRpcResponseCharUuid);
-            Device.SetCommandCharacteristic(_bt510Config.JsonRpcCommandCharUuid);
-            
+            // Configure service and characteristics
+            await Device.SetServiceAsync(_bt510Config.CustomServiceUuid);
+            await Device.SetNotificationsAsync(_bt510Config.JsonRpcResponseCharUuid);
+            await Device.SetCommandCharacteristicAsync(_bt510Config.JsonRpcCommandCharUuid);
+
+            // Hook up the notification handler           
             Device.NotificationDataReceived += OnNotificationDataReceived;
-            
-            // ✅ Use configurable delay
-            await Task.Delay(_bt510Config.CommunicationSetupDelayMs).ConfigureAwait(false);
+
+            // Wait for the device to be ready
+            //await Task.Delay(_bt510Config.CommunicationSetupDelayMs);
+            //Thread.Sleep(10); // Use Thread.Sleep for synchronous initialization
         }
 
         /// <summary>
@@ -112,33 +110,49 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         private async Task<JsonRpcResponse?> SendRequestAsync(string method, object? parameters = null)
         {
+            // Check if device is initialized
             if (Device == null)
                 throw new InvalidOperationException("Device is not initialized");
 
-            var request = new JsonRpcRequest    
+            // Prepare request json
+            var request = new JsonRpcRequest
             {
                 Method = method,
                 Params = parameters,
                 Id = GetNextId()
             };
 
+            // Serialize & create a byte array from the request
             string requestJson = JsonSerializer.Serialize(request);
             byte[] requestBytes = System.Text.Encoding.UTF8.GetBytes(requestJson);
 
-            await Device.ClearBufferAsync().ConfigureAwait(false); // Clear any previous data in the buffer
+            // Reset buffer & Write the command and wait for data to be received with a notification
+            await Device.ClearBufferAsync();
+            await Device.WriteWithoutResponseAsync(requestBytes, waitForNotificationDataReceived: true);
 
-            // Write the command and wait for data to be received with a notification
-            await Device.WriteWithoutResponseAsync(requestBytes, waitForNotificationDataReceived: true).ConfigureAwait(false);
-            
             // Get the response data
-            var responseData = await Device.GetBufferDataAsync().ConfigureAwait(false);
+            var responseData = await Device.GetBufferDataAsync();
             if (responseData.Length == 0)
+            {
                 return null;
+            }
 
+            // Deserialize the response data
+            var responseStr = System.Text.Encoding.UTF8.GetString(responseData);
+            Console.WriteLine($"Received response: {responseStr}");
+            var responseJson = JsonSerializer.Deserialize<JsonRpcResponse>(responseStr);
 
-            var responseJson = System.Text.Encoding.UTF8.GetString(responseData);
-            Console.WriteLine($"Received response: {responseJson}");
-            return JsonSerializer.Deserialize<JsonRpcResponse>(responseJson);
+            // Validate the ID of the response, must be the same ID as the request
+            var responseId = responseJson?.Id;
+            if (responseId == null || responseId != request.Id)
+            {
+                Console.WriteLine($"Response ID mismatch: expected {request.Id}, got {responseId}");
+                throw new InvalidOperationException($"Response ID mismatch: expected {request.Id}, got {responseId}");
+            }
+
+            // Return the response object
+            Console.WriteLine($"Received response: {responseStr}");
+            return JsonSerializer.Deserialize<JsonRpcResponse>(responseStr);
         }
         #endregion
 
@@ -149,7 +163,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<Dictionary<string, object>?> GetAsync(params string[] properties)
         {
-            var response = await SendRequestAsync("get", properties).ConfigureAwait(false);
+            var response = await SendRequestAsync("get", properties);
             return response?.GetResult<Dictionary<string, object>>();
         }
 
@@ -158,7 +172,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<bool> SetAsync(Dictionary<string, object> properties)
         {
-            var response = await SendRequestAsync("set", properties).ConfigureAwait(false);
+            var response = await SendRequestAsync("set", properties);
             return response != null && !response.HasError;
         }
 
@@ -167,7 +181,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<Dictionary<string, object>?> DumpAsync(int? mode = null)
         {
-            var response = await SendRequestAsync("dump", mode).ConfigureAwait(false);
+            var response = await SendRequestAsync("dump", mode);
             return response?.GetResult<Dictionary<string, object>>();
         }
 
@@ -177,7 +191,7 @@ namespace SensorGateway.Sensors.bt510
         public async Task<bool> RebootAsync(int bootloaderMode = 0)
         {
             object? parameters = bootloaderMode == 0 ? null : bootloaderMode;
-            var response = await SendRequestAsync("reboot", parameters).ConfigureAwait(false);
+            var response = await SendRequestAsync("reboot", parameters);
             return response != null && !response.HasError;
         }
 
@@ -194,20 +208,21 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<bool> FactoryResetAsync()
         {
-            //var response = await SendRequestAsync("factoryReset").ConfigureAwait(false);
-            //return response != null && !response.HasError;
             throw new NotImplementedException("Factory reset is not implemented for safety reasons.");
+
+            var response = await SendRequestAsync("factoryReset");
+            return response != null && !response.HasError;
         }
         */
 
         /// <summary>
         /// Prepare sensor log for reading
         /// </summary>
-        public async Task<bool> PrepareLogAsync(int mode = 0)
+        public async Task<uint?> PrepareLogAsync(int mode = 0)
         {
             // TestProgram.cs shows params as array: "params": [0]
-            var response = await SendRequestAsync("prepareLog", new[] { mode }).ConfigureAwait(false);
-            return response != null && !response.HasError;
+            var response = await SendRequestAsync("prepareLog", new[] { mode });
+            return response?.GetResult<uint>();
         }
 
         /// <summary>
@@ -216,8 +231,8 @@ namespace SensorGateway.Sensors.bt510
         public async Task<byte[]?> ReadLogAsync(int numberOfEvents)
         {
             // TestProgram.cs shows params as array: "params": [500]
-            var response = await SendRequestAsync("readLog", new[] { numberOfEvents }).ConfigureAwait(false);
-            
+            var response = await SendRequestAsync("readLog", new[] { numberOfEvents });
+
             if (response?.Result == null)
                 return null;
 
@@ -245,10 +260,10 @@ namespace SensorGateway.Sensors.bt510
         /// <summary>
         /// Acknowledge and invalidate log entries
         /// </summary>
-        public async Task<bool> AckLogAsync(int numberOfEvents)
+        public async Task<uint?> AckLogAsync(int numberOfEvents)
         {
-            var response = await SendRequestAsync("ackLog", new[] { numberOfEvents }).ConfigureAwait(false);
-            return response != null && !response.HasError;
+            var response = await SendRequestAsync("ackLog", new[] { numberOfEvents });
+            return response?.GetResult<uint>();
         }
 
         /// <summary>
@@ -256,7 +271,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<bool> SetEpochAsync(long epochSeconds)
         {
-            var response = await SendRequestAsync("setEpoch", new[] { epochSeconds }).ConfigureAwait(false);
+            var response = await SendRequestAsync("setEpoch", new[] { epochSeconds });
             return response != null && !response.HasError;
         }
 
@@ -265,7 +280,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<long?> GetEpochAsync()
         {
-            var response = await SendRequestAsync("getEpoch").ConfigureAwait(false);
+            var response = await SendRequestAsync("getEpoch");
             return response?.GetResult<long>();
         }
 
@@ -274,7 +289,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<bool> LedTestAsync(int durationMs)
         {
-            var response = await SendRequestAsync("ledTest", durationMs).ConfigureAwait(false);
+            var response = await SendRequestAsync("ledTest", durationMs);
             return response != null && !response.HasError;
         }
 
@@ -284,12 +299,14 @@ namespace SensorGateway.Sensors.bt510
         // Fix the event handler signature
         private void OnNotificationDataReceived(object sender, byte[]? data, string uuid)
         {
-            Console.Write(".");
             if (data == null || data.Length == 0)
             {
                 // No data received, nothing to process
                 return;
             }
+
+            var jsonRpcResponse = System.Text.Encoding.UTF8.GetString(data);
+            Console.WriteLine($"Received JSON-RPC response: {jsonRpcResponse}");
 
             // Cast sender to BTDevice if you need device-specific operations
             var device = sender as BTDevice;
@@ -297,7 +314,6 @@ namespace SensorGateway.Sensors.bt510
             // Check if last byte equals a }-sign, since this indicates the end of a JSON-RPC response
             if (data.Last() == '}')
             {
-                Console.WriteLine(System.Text.Encoding.UTF8.GetString(data));
                 device?.StopCommunication();
             }
         }
@@ -317,7 +333,7 @@ namespace SensorGateway.Sensors.bt510
                 properties = new List<string>();
             }
 
-            var response = await GetAsync(properties.ToArray()).ConfigureAwait(false);
+            var response = await GetAsync(properties.ToArray());
             return response;
         }
 
@@ -326,32 +342,22 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public async Task<bool> UpdateConfigurationAsync(Dictionary<string, object> config)
         {
-            return await SetAsync(config).ConfigureAwait(false);
+            return await SetAsync(config);
         }
 
         /// <summary>
         /// Download all available logs using configuration values
         /// </summary>
-        public async Task<List<byte[]>> DownloadAllLogsAsync()
+        public async Task<byte[]?> DownloadAllLogsAsync()
         {
-            var allLogs = new List<byte[]>();
-            
-            await PrepareLogAsync(0).ConfigureAwait(false);
-            
-            // ✅ Use your configuration for batch size
-            int batchSize = _sensorConfig.MaxLogEntriesPerRequest;
-            byte[]? batch;
-            
-            do
+            var prepLog = await PrepareLogAsync();
+            if (prepLog == null || prepLog == 0)
             {
-                batch = await ReadLogAsync(batchSize).ConfigureAwait(false);
-                if (batch?.Length > 0)
-                {
-                    allLogs.Add(batch);
-                }
-            } while (batch?.Length == (batchSize * _bt510Config.LogEntrySize));
-            
-            return allLogs;
+                return null;
+            }
+
+            var logData = await ReadLogAsync(500);
+            return logData;
         }
 
         /// <summary>
@@ -360,7 +366,7 @@ namespace SensorGateway.Sensors.bt510
         public async Task<bool> SynchronizeTimeAsync()
         {
             var currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            return await SetEpochAsync(currentEpoch).ConfigureAwait(false);
+            return await SetEpochAsync(currentEpoch);
         }
 
         #endregion

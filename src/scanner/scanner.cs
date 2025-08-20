@@ -168,19 +168,19 @@ namespace SensorGateway.Gateway
             var discoveredCount = 0;
             var scanEndTime = DateTime.Now.Add(scanDuration);
 
+            // Get a token for this scan operation
             // Start discovery
+            using var token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(60), cancellationToken);
             await adapter.StartDiscoveryAsync();
 
             //BTToken? token = null;
             try
             {
-                // Get a token for this scan operation
                 // This ensures we don't exceed the maximum concurrent operations
                 // Note: This is a blocking call that will wait until a token is available
                 // If this times out, it means too many scans are running concurrently
                 // This is important to prevent overwhelming the Bluetooth stack
                 // The use of `using` ensures the token is returned to the pool automatically
-                using var token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(60), cancellationToken);
                
                 // Scan for the specified duration
                 while (DateTime.Now < scanEndTime && !cancellationToken.IsCancellationRequested)
@@ -193,6 +193,7 @@ namespace SensorGateway.Gateway
                         {
                             var deviceName = await device.GetAliasAsync();
                             var deviceAddress = await device.GetAddressAsync();
+                            var mData = await Device1Extensions.GetManufacturerDataAsync(device);
 
                             // Check if device matches any prefix and should be processed
                             if (!string.IsNullOrEmpty(deviceName) &&

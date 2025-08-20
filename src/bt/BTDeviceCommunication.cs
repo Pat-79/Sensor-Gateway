@@ -121,11 +121,21 @@ namespace SensorGateway.Bluetooth
                 throw new InvalidOperationException("Response characteristic not initialized");
             }
 
-            // Clear the data buffer before starting notifications
-            await _clearBufferAsync();
-
             // Subscribe to notifications
             _responseChar.Value += ReceiveNotificationData;
+
+            //byte[] value;
+            //try
+            //{
+            //    Console.WriteLine("Reading current characteristic value...");
+            //    value = await _responseChar.GetValueAsync();
+            //    await _clearBufferAsync();
+            //}
+            //catch (Exception ex)
+            //{
+            //    Console.Error.WriteLine($"Error reading characteristic value: {ex.Message}");
+            //    return;
+            //}
         }
 
         /// <summary>
@@ -222,6 +232,9 @@ namespace SensorGateway.Bluetooth
                     _waitingForNotification = true;
                 }
 
+
+                await _clearBufferAsync();
+
                 // Write the data without artificial delay
                 await _commandChar.WriteValueAsync(data, new Dictionary<string, object>());
 
@@ -229,10 +242,10 @@ namespace SensorGateway.Bluetooth
                 {
                     // Use proper async waiting with cancellation support
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(BTDeviceConstants.NOTIFICATION_WAIT_TIMEOUT_SECONDS));
-                    
+
                     try
                     {
-                        await Task.Run(() => 
+                        await Task.Run(() =>
                         {
                             while (_waitingForNotification && _communicationInProgress && !cts.Token.IsCancellationRequested)
                             {
@@ -391,7 +404,6 @@ namespace SensorGateway.Bluetooth
         protected virtual void OnNotificationDataReceived(string characteristicUuid, byte[] data)
         {
             NotificationDataReceived?.Invoke(this, data, characteristicUuid);
-            _onNotificationDataReceived(characteristicUuid, data);
         }
 
         #endregion

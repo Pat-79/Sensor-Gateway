@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary; // Add this using
 using System.Collections.Generic;
 using System.Linq; // Add this for LINQ operations in DisplayMeasurements
 using System.Threading;
@@ -29,7 +30,7 @@ namespace SensorGateway.Sensors.bt510
         /// <param name="device">The Bluetooth device</param>
         /// <param name="sensorType">Type of sensor</param>
         /// <param name="sensorConfig">Sensor configuration (optional)</param>
-        public BT510Sensor(BTDevice device, SensorType sensorType, SensorConfig? sensorConfig = null) 
+        public BT510Sensor(BTDevice device, SensorType sensorType, SensorConfig? sensorConfig = null)
             : base(device, sensorType)
         {
             _sensorConfig = sensorConfig ?? new SensorConfig();
@@ -37,11 +38,34 @@ namespace SensorGateway.Sensors.bt510
         }
 
         /// <summary>
+        /// Open the sensor connection
+        /// </summary>
+        public override async Task OpenAsync(CancellationToken cancellationToken = default)
+        {
+            if(!await Device!.IsConnectedAsync())
+            {
+                await Device!.ConnectAsync();
+            }
+
+            await InitializeAsync(cancellationToken);
+        }
+        /// <summary>
+        /// Close the sensor connection
+        /// </summary>
+        public override async Task CloseAsync(CancellationToken cancellationToken = default)
+        {
+            if(await Device!.IsConnectedAsync())
+            {
+                await Device!.DisconnectAsync();
+            }
+        }
+
+        /// <summary>
         /// Initializes the BT510 sensor connection and configuration
         /// </summary>
         public Task InitializeAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException();
+            return InitializeCommunicationAsync();
         }
 
         #region ISensor Implementation - Override Abstract Methods
@@ -51,33 +75,22 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task<IEnumerable<Measurement>> DownloadLogAsync(CancellationToken cancellationToken = default)
         {
-            var measurements = new List<Measurement>();
-
             try
             {
+                // 0. Check if Device is null
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException("DownloadLogAsync was canceled.", cancellationToken);
+                }
+
                 // 1. Connect to device
-                if (!await Device!.IsConnectedAsync().ConfigureAwait(false))
-                {
-                    await Device.ConnectAsync().ConfigureAwait(false);
-                }
+                await OpenAsync();
 
-                // 2. Initialize communication setup
-                await InitializeCommunicationAsync().ConfigureAwait(false);
+                // 2. Synchronize time to ensure accurate timestamps
+                await SynchronizeTimeAsync();
 
-                // 3. Synchronize time to ensure accurate timestamps
-                //await SynchronizeTimeAsync().ConfigureAwait(false);
-
-                // 4. Download all log data using the convenience method
-                var logDataBatches = await DownloadAllLogsAsync().ConfigureAwait(false);
-
-                // 5. Parse the data into structured measurements
-                foreach (var logBatch in logDataBatches)
-                {
-                    var parsedMeasurements = ParseLogEntry(logBatch);
-                    measurements.AddRange(parsedMeasurements);
-                }
-
-                return measurements;
+                // 3. Download all log data using the convenience method                
+                return await GetMeasurementsAsync(MeasurementSource.Log, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -105,17 +118,57 @@ namespace SensorGateway.Sensors.bt510
         /// <summary>
         /// Processes raw log data from BT510 sensor into structured measurements
         /// </summary>
-        public override async Task<IEnumerable<Measurement>> ProcessLogAsync(CancellationToken cancellationToken = default)
+        public override async Task<IEnumerable<Measurement>> ProcessLogAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default)
         {
-            // Get a token for this scan operation
-            // This ensures we don't exceed the maximum concurrent operations
-            // Note: This is a blocking call that will wait until a token is available
-            // If this times out, it means too many scans are running concurrently
-            // This is important to prevent overwhelming the Bluetooth stack
-            // The use of `using` ensures the token is returned to the pool automatically
-            using var token = await BTManager.Instance.GetTokenAsync(TimeSpan.FromSeconds(180), cancellationToken);
-            
-            throw new NotImplementedException();
+            try
+            {
+                // 1. Connect to device
+                await OpenAsync();
+
+                // 2. Synchronize time to ensure accurate timestamps
+                await SynchronizeTimeAsync();
+
+                // 3. Download all log data using the convenience method                
+                var measurements = await GetMeasurementsAsync(MeasurementSource.Log, cancellationToken);
+
+                // 6. Call callback method if provided
+                var callbackResult = true;
+                if (callback != null)
+                {
+                    callbackResult = callback(measurements);
+                }
+
+                // 7. Do acknowledgment
+                if (callbackResult)
+                {
+                    var ackCount = await AckLogAsync(measurements.Count());
+                    if (ackCount < measurements.Count())
+                    {
+                        Console.WriteLine($"Warning: Only {ackCount} out of {measurements.Count()} log entries acknowledged.");
+                    }
+                }
+
+                return measurements;
+            }
+            catch (Exception ex)
+            {
+                // Log the error if needed
+                throw new InvalidOperationException($"Failed to download log data from BT510 sensor: {ex.Message}", ex);
+            }
+            finally
+            {
+                // 6. Disconnect from device
+                try
+                {
+                    await CloseAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Don't throw on disconnect failures, just log if needed
+                    Console.WriteLine($"Warning: Failed to disconnect from BT510 sensor: {ex.Message}");
+                }
+            }
+
         }
 
         /// <summary>
@@ -123,17 +176,23 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task<IEnumerable<Measurement>> ParseAdvertisementAsync(CancellationToken cancellationToken = default)
         {
-            await Task.Delay(0, cancellationToken); // Simulate async operation
-            throw new NotImplementedException();
+            return await GetMeasurementsAsync(MeasurementSource.Advertisement, cancellationToken);
         }
 
         /// <summary>
         /// Processes advertisement data from BT510 sensor
         /// </summary>
-        public override async Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(CancellationToken cancellationToken = default)
+        public override async Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default)
         {
-            await Task.Delay(0, cancellationToken); // Simulate async operation
-            throw new NotImplementedException();
+            var measurements = await GetMeasurementsAsync(MeasurementSource.Advertisement, cancellationToken);
+
+            // 6. Call callback method if provided
+            if (callback != null)
+            {
+                callback(measurements);
+            }
+            
+            return measurements;
         }
 
         /// <summary>
@@ -141,17 +200,84 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task<IEnumerable<Measurement>> GetMeasurementsAsync(MeasurementSource source = MeasurementSource.Both, CancellationToken cancellationToken = default)
         {
-            await Task.Delay(0, cancellationToken); // Simulate async operation
-            throw new NotImplementedException();
+            // 0. Check if Device is null
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException("DownloadLogAsync was canceled.", cancellationToken);
+            }
+
+            var measurements = new List<Measurement>();
+
+            if (source == MeasurementSource.Advertisement || source == MeasurementSource.Both)
+            {
+                measurements.AddRange(GetMeasurementsAdvertisement());
+            }
+
+            if (source == MeasurementSource.Log || source == MeasurementSource.Both)
+            {
+
+                // 4. Parse the data into structured measurements
+                measurements.AddRange(await GetMeasurementsLogAsync());
+            }
+            
+            return measurements;
+        }
+
+        private IEnumerable<Measurement> GetMeasurementsAdvertisement()
+        {
+            var advData = Device?.AdvertisementData;
+            var measurements = new List<Measurement>();
+
+            if(advData == null || advData.Count == 0)
+            {
+                return measurements; // No advertisement data to process
+            }
+
+            foreach (var data in advData)
+            {
+                // Do magic parsing here
+            }
+
+            return measurements;
+        }
+
+        private async Task<IEnumerable<Measurement>> GetMeasurementsLogAsync()
+        {
+            // 1. Connect to device
+            await Device!.ConnectAsync();
+            if (!await Device!.IsConnectedAsync())
+            {
+                throw new InvalidOperationException("Failed to connect to BT510 sensor.");
+            }
+
+            // 2. Initialize communication setup
+            await InitializeCommunicationAsync();
+
+            // 3. Download all log data using the convenience method
+            var logData = await DownloadAllLogsAsync();
+            if (logData == null)
+            {
+                return Enumerable.Empty<Measurement>(); // No data to process
+            }
+
+            return ParseLogEntry(logData);
         }
 
         /// <summary>
         /// Gets current configuration from BT510 sensor via JSON-RPC
         /// </summary>
-        public override async Task<Dictionary<string, object>> GetConfigurationAsync(CancellationToken cancellationToken = default)
+        public override async Task<Dictionary<string, object>?> GetConfigurationAsync(CancellationToken cancellationToken = default)
         {
-            await Task.Delay(0, cancellationToken); // Simulate async operation
-            throw new NotImplementedException();
+            List<string>? properties = null;
+            
+            // If no specific properties requested, return all common ones
+            if (properties == null || properties.Count == 0)
+            {
+                properties = new List<string>();
+            }
+
+            var response = await GetAsync(properties.ToArray()).ConfigureAwait(false);
+            return response;
         }
 
         /// <summary>
@@ -159,81 +285,11 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task<bool> UpdateConfigurationAsync(Dictionary<string, object> configuration, CancellationToken cancellationToken = default)
         {
-            await Task.Delay(0, cancellationToken); // Simulate async operation
-            throw new NotImplementedException();
+            return await UpdateConfigurationAsync(configuration);
         }
         #endregion
 
         #region Helper Methods
-
-        /// <summary>
-        /// Parses a single log entry into measurement objects
-        /// </summary>
-        private IEnumerable<Measurement> ParseLogEntry(object logEntry)
-        {
-            var measurements = new List<Measurement>();
-
-            try
-            {
-                // Convert the log entry to a dictionary for easier parsing
-                if (logEntry is not System.Text.Json.JsonElement jsonElement)
-                {
-                    return measurements;
-                }
-
-                // Extract timestamp if available
-                var timestamp = DateTime.UtcNow; // Default fallback
-                if (jsonElement.TryGetProperty("timestamp", out var timestampElement))
-                {
-                    if (timestampElement.TryGetInt64(out var epochSeconds))
-                    {
-                        timestamp = DateTimeOffset.FromUnixTimeSeconds(epochSeconds).DateTime;
-                    }
-                }
-
-                // Extract temperature measurement
-                if (jsonElement.TryGetProperty("temperature", out var tempElement) && 
-                    tempElement.TryGetDouble(out var temperature))
-                {
-                    measurements.Add(new Measurement
-                    {
-                        Type = MeasurementType.Temperature,
-                        Value = temperature,
-                        Unit = "°C",
-                        TimestampUtc = timestamp,
-                        Source = MeasurementSource.Log
-                    });
-                }
-
-                // Extract battery measurement  
-                if (jsonElement.TryGetProperty("battery", out var batteryElement) && 
-                    batteryElement.TryGetDouble(out var battery))
-                {
-                    measurements.Add(new Measurement
-                    {
-                        Type = MeasurementType.Battery,
-                        Value = battery,
-                        Unit = "V",
-                        TimestampUtc = timestamp,
-                        Source = MeasurementSource.Log
-                    });
-                }
-
-                // Handle nested data objects
-                if (jsonElement.TryGetProperty("data", out var dataElement))
-                {
-                    var nestedMeasurements = ParseDataElement(dataElement, timestamp);
-                    measurements.AddRange(nestedMeasurements);
-                }
-            }
-            catch (Exception ex)
-            {
-                // Log parsing error but continue with other entries
-                Console.WriteLine($"Warning: Failed to parse log entry: {ex.Message}");
-            }
-
-            return measurements;
-        }
 
         /// <summary>
         /// Parses a data element from a log entry
@@ -281,15 +337,14 @@ namespace SensorGateway.Sensors.bt510
         }
 
         /// <summary>
-        /// Parses binary log data from BT510 into measurement objects using configuration
+        /// Parses binary log data from BT510 into measurement objects using explicit little-endian format
         /// </summary>
-        private IEnumerable<Measurement> ParseLogEntry(byte[] logData)
+        public IEnumerable<Measurement> ParseLogEntry(byte[] logData)
         {
             var measurements = new List<Measurement>();
 
             try
             {
-                // ✅ Use your configuration instead of magic number
                 int eventSize = _bt510Config.LogEntrySize;
                 var eventCount = logData.Length / eventSize;
 
@@ -297,9 +352,9 @@ namespace SensorGateway.Sensors.bt510
                 {
                     var eventOffset = i * eventSize;
                     
-                    // Extract fields from the 8-byte structure (little-endian format)
-                    var timestamp = BitConverter.ToUInt32(logData, eventOffset);
-                    var data = BitConverter.ToUInt16(logData, eventOffset + 4);
+                    // Explicitly handle little-endian format regardless of host architecture
+                    var timestamp = BinaryPrimitives.ReadUInt32LittleEndian(logData.AsSpan(eventOffset, 4));
+                    var data = BinaryPrimitives.ReadUInt16LittleEndian(logData.AsSpan(eventOffset + 4, 2));
                     var type = logData[eventOffset + 6];
                     var salt = logData[eventOffset + 7];
 

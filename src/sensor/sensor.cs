@@ -13,6 +13,17 @@ namespace SensorGateway.Sensors
     /// </summary>
     public interface ISensor
     {
+        public delegate bool ExecuteAfterDownload(IEnumerable<Measurement> measurements);
+
+        /// <summary>
+        /// Open the sensor connection
+        /// </summary>
+        Task OpenAsync(CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Close the sensor connection
+        /// </summary>
+        Task CloseAsync(CancellationToken cancellationToken = default);
+
         /// <summary>
         /// Downloads the complete log data from the sensor device
         /// </summary>
@@ -25,7 +36,7 @@ namespace SensorGateway.Sensors
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         /// <returns>Collection of parsed measurements</returns>
-        Task<IEnumerable<Measurement>> ProcessLogAsync(CancellationToken cancellationToken = default);
+        Task<IEnumerable<Measurement>> ProcessLogAsync(ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Parses BLE advertisement data from the sensor
@@ -39,7 +50,7 @@ namespace SensorGateway.Sensors
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         /// <returns>Collection of current measurements (typically 0-1 items)</returns>
-        Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(CancellationToken cancellationToken = default);
+        Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Retrieves the latest measurements from the sensor
@@ -54,7 +65,7 @@ namespace SensorGateway.Sensors
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         /// <returns>Dictionary containing configuration key-value pairs</returns>
-        Task<Dictionary<string, object>> GetConfigurationAsync(CancellationToken cancellationToken = default);
+        Task<Dictionary<string, object>?> GetConfigurationAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updates the sensor configuration with the provided settings
@@ -99,6 +110,15 @@ namespace SensorGateway.Sensors
         #region ISensor Implementation - Abstract Methods (Async Only!)
         
         /// <summary>
+        /// Open the sensor connection
+        /// </summary>
+        public abstract Task OpenAsync(CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Close the sensor connection
+        /// </summary>
+        public abstract Task CloseAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Downloads the complete log data from the sensor device
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
@@ -110,7 +130,7 @@ namespace SensorGateway.Sensors
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         /// <returns>Collection of parsed measurements</returns>
-        public abstract Task<IEnumerable<Measurement>> ProcessLogAsync(CancellationToken cancellationToken = default);
+        public abstract Task<IEnumerable<Measurement>> ProcessLogAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Parses BLE advertisement data from the sensor
@@ -124,7 +144,7 @@ namespace SensorGateway.Sensors
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         /// <returns>Collection of current measurements (typically 0-1 items)</returns>
-        public abstract Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(CancellationToken cancellationToken = default);
+        public abstract Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Retrieves the latest measurements from the sensor
@@ -139,7 +159,7 @@ namespace SensorGateway.Sensors
         /// </summary>
         /// <param name="cancellationToken">Cancellation token for the operation</param>
         /// <returns>Dictionary containing configuration key-value pairs</returns>
-        public abstract Task<Dictionary<string, object>> GetConfigurationAsync(CancellationToken cancellationToken = default);
+        public abstract Task<Dictionary<string, object>?> GetConfigurationAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updates the sensor configuration with the provided settings
@@ -162,6 +182,8 @@ namespace SensorGateway.Sensors
         protected virtual void Dispose(bool disposing)
         {
             if (_disposed) return;
+
+            CloseAsync().GetAwaiter().GetResult();
 
             if (disposing)
             {

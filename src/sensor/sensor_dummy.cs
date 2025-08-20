@@ -22,6 +22,21 @@ namespace SensorGateway.Sensors
         #region ISensor Implementation - Override Abstract Methods
 
         /// <summary>
+        /// Open the sensor connection
+        /// </summary>
+        public override async Task OpenAsync(CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(100, cancellationToken); // Simulate async open
+        }
+        /// <summary>
+        /// Close the sensor connection
+        /// </summary>
+        public override async Task CloseAsync(CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(100, cancellationToken); // Simulate async close
+        }
+
+        /// <summary>
         /// Downloads simulated log data from the dummy sensor
         /// </summary>
         public override Task<IEnumerable<Measurement>> DownloadLogAsync(CancellationToken cancellationToken = default)
@@ -45,10 +60,15 @@ namespace SensorGateway.Sensors
         /// <summary>
         /// Processes simulated log data from dummy sensor
         /// </summary>
-        public override Task<IEnumerable<Measurement>> ProcessLogAsync(CancellationToken cancellationToken = default)
+        public override async Task<IEnumerable<Measurement>> ProcessLogAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default)
         {
+            var measurements = await DownloadLogAsync(cancellationToken);
             // For dummy sensor, processing is the same as downloading
-            return DownloadLogAsync(cancellationToken);
+            if (callback != null)
+            {
+                callback(measurements);
+            }
+            return measurements;
         }
 
         /// <summary>
@@ -71,8 +91,13 @@ namespace SensorGateway.Sensors
         /// <summary>
         /// Processes simulated advertisement data from dummy sensor
         /// </summary>
-        public override Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(CancellationToken cancellationToken = default)
+        public override Task<IEnumerable<Measurement>> ProcessAdvertisementAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default)
         {
+            if (callback != null)
+            {
+                var measurements = ParseAdvertisementAsync(cancellationToken);
+                callback(measurements.Result);
+            }
             return ParseAdvertisementAsync(cancellationToken);
         }
 
@@ -103,7 +128,7 @@ namespace SensorGateway.Sensors
         /// <summary>
         /// Gets simulated configuration from dummy sensor
         /// </summary>
-        public override Task<Dictionary<string, object>> GetConfigurationAsync(CancellationToken cancellationToken = default)
+        public override Task<Dictionary<string, object>?> GetConfigurationAsync(CancellationToken cancellationToken = default)
         {
             var config = new Dictionary<string, object>
             {
@@ -112,7 +137,7 @@ namespace SensorGateway.Sensors
                 ["enabled"] = true,
                 ["lastUpdated"] = DateTime.UtcNow
             };
-            return Task.FromResult(config);
+            return Task.FromResult<Dictionary<string, object>?>(config);
         }
 
         /// <summary>
