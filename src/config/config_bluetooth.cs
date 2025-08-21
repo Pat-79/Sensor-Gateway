@@ -35,7 +35,7 @@ namespace SensorGateway.Configuration
         /// <summary>
         /// Device name prefixes to scan for
         /// </summary>
-        public List<string> DeviceNameFilters { get; set; } = new List<string> { "DTT-", "BT510-" };
+        public List<string> DeviceNameFilters { get; set; } = new List<string> { "BT-", "BT510-" };
 
         /// <summary>
         /// Service UUIDs to filter devices by
@@ -46,5 +46,10 @@ namespace SensorGateway.Configuration
         /// Minimum RSSI threshold for device discovery (dBm)
         /// </summary>
         public short MinRssiThreshold { get; set; } = -90;
+
+        /// <summary>
+        /// Agent configuration settings
+        /// </summary>
+        public AgentConfig Agent { get; set; } = new AgentConfig();
     }
 }
