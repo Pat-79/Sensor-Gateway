@@ -71,6 +71,8 @@ namespace SensorGateway.Sensors.bt510
     {
         #region Private Fields
         private uint _nextId = 1;
+        private bool _isInitialized = false;
+        private bool _eventHandlerRegistered = false;
         #endregion
 
         #region ID Management
@@ -92,17 +94,23 @@ namespace SensorGateway.Sensors.bt510
             if (Device == null)
                 throw new InvalidOperationException("Device is not initialized");
 
-            // Configure service and characteristics
-            await Device.SetServiceAsync(_bt510Config.CustomServiceUuid);
-            await Device.SetNotificationsAsync(_bt510Config.JsonRpcResponseCharUuid);
-            await Device.SetCommandCharacteristicAsync(_bt510Config.JsonRpcCommandCharUuid);
+            // Configure service and characteristics only once
+            if (!_isInitialized)
+            {
+                await Device.SetServiceAsync(_bt510Config.CustomServiceUuid);
+                await Device.SetNotificationsAsync(_bt510Config.JsonRpcResponseCharUuid);
+                await Device.SetCommandCharacteristicAsync(_bt510Config.JsonRpcCommandCharUuid);
+                _isInitialized = true;
+                Console.WriteLine("BT510 communication services initialized");
+            }
 
-            // Hook up the notification handler           
-            Device.NotificationDataReceived += OnNotificationDataReceived;
-
-            // Wait for the device to be ready
-            //await Task.Delay(_bt510Config.CommunicationSetupDelayMs);
-            //Thread.Sleep(10); // Use Thread.Sleep for synchronous initialization
+            // Register event handler only once
+            if (!_eventHandlerRegistered)
+            {
+                Device.NotificationDataReceived += OnNotificationDataReceived;
+                _eventHandlerRegistered = true;
+                Console.WriteLine("BT510 event handler registered");
+            }
         }
 
         /// <summary>
@@ -305,15 +313,14 @@ namespace SensorGateway.Sensors.bt510
                 return;
             }
 
-            var jsonRpcResponse = System.Text.Encoding.UTF8.GetString(data);
-            Console.WriteLine($"Received JSON-RPC response: {jsonRpcResponse}");
-
-            // Cast sender to BTDevice if you need device-specific operations
-            var device = sender as BTDevice;
-
-            // Check if last byte equals a }-sign, since this indicates the end of a JSON-RPC response
-            if (data.Last() == '}')
+            // The data MTU is set to 244 bytes. A full data chunk is 244 bytes.
+            // If the data length is less than 244 bytes, it indicates a non-full data chunk,
+            // which means it's the last part of a JSON-RPC response.
+            // Else, check if the last byte is a '}'-sign, it indicates the end of a JSON-RPC response.
+            if (data.Length < 244 || (data.Length > 0 && data[data.Length - 1] == (byte)'}'))
             {
+                // Cast sender to BTDevice if you need device-specific operations
+                var device = sender as BTDevice;
                 device?.StopCommunication();
             }
         }
