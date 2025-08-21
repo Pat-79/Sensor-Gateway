@@ -147,7 +147,6 @@ namespace SensorGateway.Sensors.bt510
 
             // Deserialize the response data
             var responseStr = System.Text.Encoding.UTF8.GetString(responseData);
-            Console.WriteLine($"Received response: {responseStr}");
             var responseJson = JsonSerializer.Deserialize<JsonRpcResponse>(responseStr);
 
             // Validate the ID of the response, must be the same ID as the request

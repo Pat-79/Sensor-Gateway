@@ -131,14 +131,14 @@ namespace SensorGateway.Sensors.bt510
                 // 3. Download all log data using the convenience method                
                 var measurements = await GetMeasurementsAsync(MeasurementSource.Log, cancellationToken);
 
-                // 6. Call callback method if provided
+                // 4. Call callback method if provided
                 var callbackResult = true;
                 if (callback != null)
                 {
                     callbackResult = callback(measurements);
                 }
 
-                // 7. Do acknowledgment
+                // 5. Do acknowledgment (if callback was successful)
                 if (callbackResult)
                 {
                     var ackCount = await AckLogAsync(measurements.Count());
@@ -529,30 +529,6 @@ namespace SensorGateway.Sensors.bt510
             
             Console.WriteLine(new string('=', 80));
         }
-
-        /// <summary>
-        /// Test helper method to download and display BT510 measurements
-        /// </summary>
-        public async Task TestDownloadAndDisplayAsync()
-        {
-            try
-            {
-                Console.WriteLine("🔄 Starting BT510 measurement download...");
-                
-                // Download measurements using the existing method
-                var measurements = await DownloadLogAsync().ConfigureAwait(false);
-                
-                // Display the results
-                DisplayMeasurements(measurements);
-            }
-            catch (Exception ex)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"❌ Error downloading measurements: {ex.Message}");
-                Console.ResetColor();
-            }
-        }
-
         #endregion
     }
 }
