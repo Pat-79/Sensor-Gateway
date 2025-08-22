@@ -1,11 +1,11 @@
 using System;
-using System.Buffers.Binary; // Add this using
+using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Linq; // Add this for LINQ operations in DisplayMeasurements
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using SensorGateway.Bluetooth;
-using SensorGateway.Configuration; // Add this using
+using SensorGateway.Configuration;
 using SensorGateway.Gateway;
 
 namespace SensorGateway.Sensors.bt510
@@ -28,14 +28,28 @@ namespace SensorGateway.Sensors.bt510
         /// <summary>
         /// Initializes a new instance of the BT510Sensor with optional configuration
         /// </summary>
-        /// <param name="device">The Bluetooth device</param>
+        /// <param name="device">The Bluetooth device interface</param>
         /// <param name="sensorType">Type of sensor</param>
         /// <param name="sensorConfig">Sensor configuration (optional)</param>
-        public BT510Sensor(BTDevice device, SensorType sensorType, SensorConfig? sensorConfig = null)
-            : base(device, sensorType)
+        public BT510Sensor(IBTDevice device, SensorType sensorType, SensorConfig? sensorConfig = null)
+            : base(device, sensorType, device.Name ?? "BT510Sensor")
         {
             _sensorConfig = sensorConfig ?? new SensorConfig();
             _bt510Config = _sensorConfig.BT510; // Use the nested BT510 config
+        }
+
+        /// <summary>
+        /// Initializes a new BT510Sensor with the specified device and configuration.
+        /// Sets up event handlers for device notifications and prepares the sensor for communication.
+        /// </summary>
+        /// <param name="device">The Bluetooth device interface for communication</param>
+        /// <param name="sensorConfig">Configuration settings for the sensor</param>
+        /// <param name="bt510Config">BT510-specific configuration settings</param>
+        public BT510Sensor(IBTDevice device, SensorConfig sensorConfig, BT510Config bt510Config)
+            : base(device, SensorType.BT510, device.Name ?? "BT510Sensor")
+        {
+            _sensorConfig = sensorConfig;
+            _bt510Config = bt510Config;
         }
 
         /// <summary>

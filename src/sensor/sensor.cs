@@ -97,13 +97,19 @@ namespace SensorGateway.Sensors
         /// </summary>
         public BTAddress? Address { get; private set; }
 
-        public BTDevice? Device { get; private set; }
+        public IBTDevice? Device { get; private set; }
 
-        protected Sensor(BTDevice? device, SensorType sensorType)
+        /// <summary>
+        /// Initializes a new sensor with the specified device, sensor type, and name.
+        /// </summary>
+        /// <param name="device">The Bluetooth device interface for communication</param>
+        /// <param name="sensorType">The type of sensor being created</param>
+        /// <param name="name">The name of the sensor for identification purposes</param>
+        protected Sensor(IBTDevice device, SensorType sensorType, string name)
         {
             SensorType = sensorType;
             Device = device ?? throw new ArgumentNullException(nameof(device), "Device cannot be null");
-            Name = Device.Name ?? "Unknown Sensor";
+            Name = name ?? Device.Name ?? "Unknown Sensor";
             Address = Device.Address;
         }
 

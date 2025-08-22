@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SensorGateway.Bluetooth;
 using SensorGateway.Sensors.bt510;
+using SensorGateway.Configuration; // Add this line
 
 namespace SensorGateway.Sensors
 {
@@ -93,6 +94,23 @@ namespace SensorGateway.Sensors
             };
 
             return Task.FromResult(sensorType);
+        }
+
+        /// <summary>
+        /// Creates a sensor instance based on the specified device and configuration
+        /// </summary>
+        /// <param name="device">The Bluetooth device</param>
+        /// <param name="sensorConfig">The sensor configuration</param>
+        /// <returns>The created sensor instance</returns>
+        /// <exception cref="NotSupportedException">Thrown when the sensor type is not supported</exception>
+        public static ISensor CreateSensor(IBTDevice device, SensorConfig sensorConfig)
+        {
+            return device.Type switch
+            {
+                SensorType.BT510 => new BT510Sensor(device, SensorType.BT510, sensorConfig),
+                SensorType.Dummy => new DummySensor(device, SensorType.Dummy, sensorConfig),
+                _ => throw new NotSupportedException($"Sensor type {device.Type} is not supported.")
+            };
         }
     }
     #endregion

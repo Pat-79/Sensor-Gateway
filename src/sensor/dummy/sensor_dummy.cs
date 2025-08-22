@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SensorGateway.Bluetooth;
 using SensorGateway.Gateway;
+using SensorGateway.Configuration;
 
 namespace SensorGateway.Sensors
 {
@@ -14,10 +15,20 @@ namespace SensorGateway.Sensors
     public class DummySensor : Sensor
     {
         private readonly Random _random = new Random();
+        private readonly SensorConfig _sensorConfig;
 
-        public DummySensor(BTDevice? device, SensorType sensorType) : base(device, sensorType)
+        /// <summary>
+        /// Initializes a new instance of the DummySensor with optional configuration
+        /// </summary>
+        /// <param name="device">The Bluetooth device interface</param>
+        /// <param name="sensorType">Type of sensor</param>
+        /// <param name="sensorConfig">Sensor configuration (optional)</param>
+        public DummySensor(IBTDevice device, SensorType sensorType, SensorConfig? sensorConfig = null)
+            : base(device, sensorType, device.Name ?? "DummySensor")
         {
+            _sensorConfig = sensorConfig ?? new SensorConfig();
         }
+
 
         #region ISensor Implementation - Override Abstract Methods
 

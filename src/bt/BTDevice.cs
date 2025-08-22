@@ -34,7 +34,7 @@ namespace SensorGateway.Bluetooth
     /// particularly BT510 temperature sensors from Laird Connectivity.
     /// Implements IDisposable to ensure proper cleanup of resources.
     /// </summary>
-    public partial class BTDevice : IDisposable
+    public partial class BTDevice : IBTDevice
     {
         #region Events
         public delegate void NotificationDataReceivedHandler(object sender, byte[]? data, string uuid);
