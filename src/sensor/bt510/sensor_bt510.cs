@@ -367,7 +367,7 @@ namespace SensorGateway.Sensors.bt510
         /// <summary>
         /// Creates a measurement from a BT510 event based on the event type
         /// </summary>
-        private Measurement? CreateMeasurementFromEvent(byte eventType, ushort data, DateTime timestamp)
+        internal Measurement? CreateMeasurementFromEvent(byte eventType, ushort data, DateTime timestamp)
         {
             return eventType switch
             {
@@ -418,7 +418,7 @@ namespace SensorGateway.Sensors.bt510
         /// <summary>
         /// Converts temperature data from hundredths of degrees C (signed 16-bit)
         /// </summary>
-        private double ConvertTemperatureData(ushort data)
+        internal double ConvertTemperatureData(ushort data)
         {
             // Temperature is stored as hundredths of degrees C in a signed 16-bit number
             var signedData = unchecked((short)data);
@@ -428,7 +428,7 @@ namespace SensorGateway.Sensors.bt510
         /// <summary>
         /// Converts battery data from millivolts (unsigned 16-bit)
         /// </summary>
-        private double ConvertBatteryData(ushort data)
+        internal double ConvertBatteryData(ushort data)
         {
             // Battery is stored as millivolts in an unsigned 16-bit number
             return data / 1000.0; // Convert to volts
