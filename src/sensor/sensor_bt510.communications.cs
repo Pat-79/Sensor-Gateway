@@ -10,61 +10,6 @@ using SensorGateway.Bluetooth;
 
 namespace SensorGateway.Sensors.bt510
 {
-    #region JSON-RPC Data Structures
-
-    /// <summary>
-    /// Simplified JSON-RPC request structure
-    /// </summary>
-    public class JsonRpcRequest
-    {
-        [JsonPropertyName("jsonrpc")]
-        public string JsonRpc { get; set; } = "2.0";
-
-        [JsonPropertyName("method")]
-        public string Method { get; set; } = "";
-
-        [JsonPropertyName("params")]
-        public object? Params { get; set; }
-
-        [JsonPropertyName("id")]
-        public uint Id { get; set; }
-    }
-
-    /// <summary>
-    /// Simplified JSON-RPC response structure
-    /// </summary>
-    public class JsonRpcResponse
-    {
-        [JsonPropertyName("jsonrpc")]
-        public string JsonRpc { get; set; } = "";
-
-        [JsonPropertyName("result")]
-        public object? Result { get; set; }
-
-        [JsonPropertyName("error")]
-        public JsonRpcError? Error { get; set; }
-
-        [JsonPropertyName("id")]
-        public uint Id { get; set; }
-
-        public bool HasError => Error != null;
-        public T? GetResult<T>() => Result != null ? JsonSerializer.Deserialize<T>(Result.ToString()!) : default;
-    }
-
-    public class JsonRpcError
-    {
-        [JsonPropertyName("code")]
-        public int Code { get; set; }
-
-        [JsonPropertyName("message")]
-        public string Message { get; set; } = "";
-
-        [JsonPropertyName("data")]
-        public object? Data { get; set; }
-    }
-
-    #endregion
-
     #region BT510 Communication Implementation
 
     public partial class BT510Sensor
@@ -73,6 +18,7 @@ namespace SensorGateway.Sensors.bt510
         private uint _nextId = 1;
         private bool _isInitialized = false;
         private bool _eventHandlerRegistered = false;
+        private object _receiveLock = new object();
         #endregion
 
         #region ID Management
@@ -159,7 +105,7 @@ namespace SensorGateway.Sensors.bt510
 
             // Return the response object
             Console.WriteLine($"Received response: {responseStr}");
-            return JsonSerializer.Deserialize<JsonRpcResponse>(responseStr);
+            return responseJson;
         }
         #endregion
 
@@ -167,11 +113,56 @@ namespace SensorGateway.Sensors.bt510
 
         /// <summary>
         /// Get attribute values from the BT510 sensor
+        /// Handles BT510's non-standard JSON-RPC format where properties appear at root level
         /// </summary>
+        /// <param name="properties">Properties to retrieve (empty for all properties)</param>
+        /// <returns>Dictionary containing the requested properties</returns>
         public async Task<Dictionary<string, object>?> GetAsync(params string[] properties)
         {
             var response = await SendRequestAsync("get", properties);
             return response?.GetResult<Dictionary<string, object>>();
+        }
+
+        /// <summary>
+        /// Get a single property value with type safety
+        /// </summary>
+        /// <typeparam name="T">Expected property type</typeparam>
+        /// <param name="propertyName">Name of the property to retrieve</param>
+        /// <returns>Typed property value or default if not found</returns>
+        public async Task<T> GetAsync<T>(string propertyName)
+        {
+            var response = await SendRequestAsync("get", new[] { propertyName });
+            if (response != null)
+            {
+                return response.GetResult<T>(propertyName);
+            }
+            return default(T)!;
+        }
+
+        /// <summary>
+        /// Get a single property value with type safety (legacy method - use GetAsync&lt;T&gt; instead)
+        /// </summary>
+        /// <typeparam name="T">Expected property type</typeparam>
+        /// <param name="propertyName">Name of the property to retrieve</param>
+        /// <returns>Typed property value or default if not found</returns>
+        [Obsolete("Use GetAsync<T>(string propertyName) instead for better type safety")]
+        public async Task<T?> GetPropertyAsync<T>(string propertyName) where T : class
+        {
+            var response = await SendRequestAsync("get", new[] { propertyName });
+            return response?.GetResult<T>(propertyName);
+        }
+
+        /// <summary>
+        /// Get a single property value for value types (legacy method - use GetAsync&lt;T&gt; instead)
+        /// </summary>
+        /// <typeparam name="T">Expected property type (value type)</typeparam>
+        /// <param name="propertyName">Name of the property to retrieve</param>
+        /// <returns>Typed property value or default if not found</returns>
+        [Obsolete("Use GetAsync<T>(string propertyName) instead for better type safety")]
+        public async Task<T> GetPropertyValueAsync<T>(string propertyName) where T : struct
+        {
+            var response = await SendRequestAsync("get", new[] { propertyName });
+            return response?.GetResult<T>(propertyName) ?? default(T);
         }
 
         /// <summary>
@@ -312,15 +303,20 @@ namespace SensorGateway.Sensors.bt510
                 return;
             }
 
-            // The data MTU is set to 244 bytes. A full data chunk is 244 bytes.
-            // If the data length is less than 244 bytes, it indicates a non-full data chunk,
-            // which means it's the last part of a JSON-RPC response.
-            // Else, check if the last byte is a '}'-sign, it indicates the end of a JSON-RPC response.
-            if (data.Length < 244 || (data.Length > 0 && data[data.Length - 1] == (byte)'}'))
+            // Make sure, in the unlikely but not impossible case of concurrent calls,
+            // that only one thread at a time can process this critical section.
+            lock (_receiveLock)
             {
-                // Cast sender to BTDevice if you need device-specific operations
-                var device = sender as BTDevice;
-                device?.StopCommunication();
+                // The data MTU is default set to 244 bytes. A full data chunk is 244 bytes.
+                // If the data length is less than the mut side in bytes, it indicates a 
+                // non-full data chunk, which means it's the last part of a JSON-RPC response.
+                // Else, check if the last byte is a '}'-sign, it indicates the end of a JSON-RPC response.
+                if (data.Length < _mtu || (data.Length > 0 && data[data.Length - 1] == (byte)'}'))
+                {
+                    // Cast sender to BTDevice if you need device-specific operations
+                    var device = sender as BTDevice;
+                    device?.StopCommunication();
+                }
             }
         }
 

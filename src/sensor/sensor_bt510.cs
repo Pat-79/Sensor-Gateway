@@ -23,6 +23,7 @@ namespace SensorGateway.Sensors.bt510
     {
         private readonly SensorConfig _sensorConfig;
         private readonly BT510Config _bt510Config;
+        private int _mtu = 244; // Default MTU size for BLE
 
         /// <summary>
         /// Initializes a new instance of the BT510Sensor with optional configuration
@@ -42,19 +43,30 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task OpenAsync(CancellationToken cancellationToken = default)
         {
-            if(!await Device!.IsConnectedAsync())
+            if (!await Device!.IsConnectedAsync())
             {
                 await Device!.ConnectAsync();
             }
 
             await InitializeAsync(cancellationToken);
+
+            // Retrieve MTU value
+            try
+            {
+                _mtu = await GetAsync<int>("mtu");
+            }
+            catch
+            {
+                // Ignore errors retrieving MTU, use current value (probably default 244)
+            }
         }
+        
         /// <summary>
         /// Close the sensor connection
         /// </summary>
         public override async Task CloseAsync(CancellationToken cancellationToken = default)
         {
-            if(await Device!.IsConnectedAsync())
+            if (await Device!.IsConnectedAsync())
             {
                 await Device!.DisconnectAsync();
             }
