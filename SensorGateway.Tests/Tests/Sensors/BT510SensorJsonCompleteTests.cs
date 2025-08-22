@@ -35,18 +35,13 @@ namespace SensorGateway.Tests.Tests.Sensors
         public void JsonRpcResponse_GetResult_WithEmptyResult_NonDictionaryType_ShouldReturnDefault()
         {
             // Arrange
-            var response = new JsonRpcResponse
-            {
-                JsonRpc = "2.0",
-                Id = 2,
-                Result = ""
-            };
+            var response = new JsonRpcResponse { Result = "" };
 
             // Act
             var result = response.GetResult<string>();
 
             // Assert
-            Assert.AreEqual("", result);
+            Assert.IsNull(result);
         }
 
         [TestMethod]

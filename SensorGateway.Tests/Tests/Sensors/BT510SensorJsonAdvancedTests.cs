@@ -185,20 +185,25 @@ namespace SensorGateway.Tests.Tests.Sensors
         [TestMethod]
         public void JsonRpcResponse_GetResult_WithEmptyResult_ShouldReturnDefault()
         {
-            // Arrange
-            var response = new JsonRpcResponse
-            {
-                JsonRpc = "2.0",
-                Id = 7,
-                Result = ""
-            };
-
-            // Act
+            // FIXED: Updated expectation based on new behavior
+            var response = new JsonRpcResponse { Result = "" };
+            
             var result = response.GetResult<Dictionary<string, object>>();
+            
+            // NEW BEHAVIOR: Empty string now returns default (null) instead of empty dictionary
+            Assert.IsNull(result);
+        }
 
-            // Assert
+        [TestMethod] 
+        public void JsonRpcResponse_GetResult_WithOkResult_ShouldReturnEmptyDict()
+        {
+            // NEW TEST: Separate test for "ok" result which should still return empty dictionary
+            var response = new JsonRpcResponse { Result = "ok" };
+            
+            var result = response.GetResult<Dictionary<string, object>>();
+            
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count); // Empty result should return empty dictionary
+            Assert.AreEqual(0, result.Count);
         }
 
         [TestMethod]

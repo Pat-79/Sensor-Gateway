@@ -52,137 +52,216 @@ namespace SensorGateway.Sensors.bt510
 
         /// <summary>
         /// Enhanced GetResult method that handles both standard JSON-RPC and BT510 formats
+        /// Optimized for performance with reduced allocations and type checks
         /// </summary>
         public T? GetResult<T>()
         {
-            // 🔧 Handle BT510 GET responses with properties at root level
-            // Example: {"jsonrpc":"2.0","id":2,"mtu":244,"sensorName":"DTT-34179","result":"ok"}
-            if (AdditionalProperties.Any())
+            // Cache the type check to avoid repeated reflection calls
+            var isDictionaryType = typeof(T) == typeof(Dictionary<string, object>);
+            
+            // Handle BT510 GET responses with properties at root level
+            if (isDictionaryType && AdditionalProperties.Count > 0)
             {
-                var rootProperties = new Dictionary<string, object>();
-
-                foreach (var kvp in AdditionalProperties)
-                {
-                    // Skip standard JSON-RPC fields
-                    if (kvp.Key == "jsonrpc" || kvp.Key == "id" || kvp.Key == "result" || kvp.Key == "error")
-                        continue;
-
-                    rootProperties[kvp.Key] = JsonElementToObject(kvp.Value);
-                }
-
-                // If we found root-level properties and T is Dictionary<string, object>
-                if (rootProperties.Any() && typeof(T) == typeof(Dictionary<string, object>))
-                {
+                var rootProperties = ExtractRootProperties();
+                if (rootProperties.Count > 0)
                     return (T)(object)rootProperties;
-                }
             }
 
-            // 🔧 Handle BT510 SET responses and other simple results
-            // Example: {"jsonrpc":"2.0","id":3,"result":"ok"}
-            if (Result != null)
+            // Early return for null result
+            if (Result == null) 
+                return default;
+
+            // Avoid string conversion for non-string results when possible
+            if (Result is JsonElement jsonElement)
+                return ProcessJsonElement<T>(jsonElement, isDictionaryType);
+            
+            // Handle string results
+            var resultStr = Result.ToString();
+            if (string.IsNullOrEmpty(resultStr)) 
+                return default;
+
+            return ProcessStringResult<T>(resultStr, isDictionaryType);
+        }
+
+        /// <summary>
+        /// Extract non-standard JSON-RPC properties from root level
+        /// </summary>
+        private Dictionary<string, object> ExtractRootProperties()
+        {
+            var rootProperties = new Dictionary<string, object>(AdditionalProperties.Count);
+            
+            foreach (var (key, value) in AdditionalProperties)
             {
-                var resultStr = Result.ToString();
+                if (!IsStandardJsonRpcField(key))
+                    rootProperties[key] = JsonElementToObject(value);
+            }
+            
+            return rootProperties;
+        }
 
-                // For Dictionary<string, object> requests with simple results like "ok"
-                if (typeof(T) == typeof(Dictionary<string, object>))
+        /// <summary>
+        /// Process JsonElement results without string conversion
+        /// </summary>
+        private static T? ProcessJsonElement<T>(JsonElement jsonElement, bool isDictionaryType)
+        {
+            if (isDictionaryType)
+            {
+                // Try direct JsonElement to Dictionary conversion
+                if (jsonElement.ValueKind == JsonValueKind.Object)
                 {
-                    // If result is just "ok" or similar, return empty dictionary (success)
-                    if (resultStr == "ok" || string.IsNullOrEmpty(resultStr))
-                    {
-                        return (T)(object)new Dictionary<string, object>();
-                    }
-
-                    // Try to deserialize as dictionary
-                    try
-                    {
-                        return JsonSerializer.Deserialize<T>(resultStr!);
-                    }
-                    catch (JsonException)
-                    {
-                        // Not a valid dictionary, return empty dictionary for "ok" responses
-                        return (T)(object)new Dictionary<string, object>();
-                    }
+                    var dict = jsonElement.EnumerateObject()
+                        .ToDictionary(p => p.Name, p => JsonElementToObject(p.Value));
+                    return (T)(object)dict;
                 }
-
-                // For other types, try direct deserialization
-                try
+                
+                // Handle "ok" response or other simple cases
+                if (jsonElement.ValueKind == JsonValueKind.String)
                 {
-                    return JsonSerializer.Deserialize<T>(resultStr!);
-                }
-                catch (JsonException)
-                {
-                    // If direct deserialization fails, try converting basic types
-                    if (typeof(T) == typeof(string))
-                        return (T)(object)resultStr!;
-
-                    if (typeof(T) == typeof(bool))
-                        return (T)(object)(resultStr == "ok");
+                    var str = jsonElement.GetString();
+                    if (str == "ok")
+                        return (T)(object)new Dictionary<string, object>();
                 }
             }
+
+            // Try direct JsonElement deserialization (most efficient)
+            if (TryDeserializeJsonElement<T>(jsonElement, out var result))
+                return result;
 
             return default;
         }
 
         /// <summary>
+        /// Process string-based results (fallback)
+        /// </summary>
+        private static T? ProcessStringResult<T>(string resultStr, bool isDictionaryType)
+        {
+            if (isDictionaryType)
+            {
+                if (resultStr == "ok")
+                    return (T)(object)new Dictionary<string, object>();
+
+                if (TryDeserialize<T>(resultStr, out var dictResult))
+                    return dictResult;
+                
+                return (T)(object)new Dictionary<string, object>();
+            }
+
+            // Try JSON deserialization first (most common case)
+            if (TryDeserialize<T>(resultStr, out var result))
+                return result;
+
+            // Fast path for common types
+            return ConvertStringToType<T>(resultStr);
+        }
+
+        /// <summary>
+        /// Fast conversion for common string-to-type scenarios
+        /// </summary>
+        private static T? ConvertStringToType<T>(string value)
+        {
+            var targetType = typeof(T);
+            
+            // Use pattern matching for better performance
+            return targetType.Name switch
+            {
+                nameof(String) => (T)(object)value,
+                nameof(Boolean) => (T)(object)(value == "ok"),
+                nameof(Int32) when int.TryParse(value, out var intVal) => (T)(object)intVal,
+                nameof(Double) when double.TryParse(value, out var doubleVal) => (T)(object)doubleVal,
+                _ => default
+            };
+        }
+
+        /// <summary>
         /// Get a specific property value from BT510's root-level properties
         /// </summary>
-        /// <typeparam name="T">Expected type of the property</typeparam>
-        /// <param name="propertyName">Name of the property to extract</param>
-        /// <returns>Typed property value or default if not found</returns>
         public T GetResult<T>(string propertyName)
         {
-            // 🎯 BT510 GET responses: Properties appear at root level
-            // Example: {"jsonrpc":"2.0","id":2,"mtu":244,"sensorName":"DTT-34179","result":"ok"}
+            if (!AdditionalProperties.TryGetValue(propertyName, out var jsonElement))
+                return default(T)!;
 
-            if (AdditionalProperties.TryGetValue(propertyName, out var jsonElement))
-            {
-                try
-                {
-                    var result = JsonSerializer.Deserialize<T>(jsonElement);
-                    return result ?? default(T)!;
-                }
-                catch (JsonException)
-                {
-                    // Fallback for basic type conversion
-                    if (typeof(T) == typeof(string))
-                        return (T)(object)jsonElement.GetString()!;
-                    if (typeof(T) == typeof(int) && jsonElement.TryGetInt32(out var intVal))
-                        return (T)(object)intVal;
-                    if (typeof(T) == typeof(long) && jsonElement.TryGetInt64(out var longVal))
-                        return (T)(object)longVal;
-                    if (typeof(T) == typeof(bool))
-                    {
-                        var boolValue = jsonElement.ValueKind == JsonValueKind.True;
-                        return (T)(object)boolValue;
-                    }
-                    if (typeof(T) == typeof(double) && jsonElement.TryGetDouble(out var doubleVal))
-                        return (T)(object)doubleVal;
-                }
-            }
+            if (TryDeserializeJsonElement<T>(jsonElement, out var result))
+                return result;
 
             return default(T)!;
         }
 
-        /// <summary>
-        /// Helper method to convert JsonElement to appropriate .NET object type
-        /// </summary>
-        private static object JsonElementToObject(JsonElement element)
+        private static bool IsStandardJsonRpcField(string fieldName) =>
+            fieldName is "jsonrpc" or "id" or "result" or "error";
+
+        private static bool TryDeserialize<T>(string json, out T? result)
         {
-            return element.ValueKind switch
+            try
             {
-                JsonValueKind.String => element.GetString()!,
-                JsonValueKind.Number => element.TryGetInt32(out int intValue) ? intValue :
-                                       element.TryGetInt64(out long longValue) ? longValue :
-                                       element.TryGetUInt32(out uint uintValue) ? uintValue :
-                                       element.GetDouble(),
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Null => null!,
-                JsonValueKind.Array => element.EnumerateArray().Select(JsonElementToObject).ToArray(),
-                JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => JsonElementToObject(p.Value)),
-                _ => element.GetRawText()
-            };
+                result = JsonSerializer.Deserialize<T>(json);
+                return true;
+            }
+            catch (JsonException)
+            {
+                result = default;
+                return false;
+            }
         }
+
+        private static bool TryDeserializeJsonElement<T>(JsonElement element, out T result)
+        {
+            try
+            {
+                var deserializedResult = JsonSerializer.Deserialize<T>(element);
+                if (deserializedResult != null)
+                {
+                    result = deserializedResult;
+                    return true;
+                }
+                else
+                {
+                    result = default(T)!;
+                    return false;
+                }
+            }
+            catch (JsonException)
+            {
+                result = TryConvertBasicType<T>(element);
+                return !EqualityComparer<T>.Default.Equals(result, default(T));
+            }
+        }
+
+        private static T TryConvertBasicType<T>(JsonElement element)
+        {
+            var targetType = typeof(T);
+            
+            if (targetType == typeof(string))
+                return (T)(object)element.GetString()!;
+            
+            if (targetType == typeof(int) && element.TryGetInt32(out var intVal))
+                return (T)(object)intVal;
+            
+            if (targetType == typeof(long) && element.TryGetInt64(out var longVal))
+                return (T)(object)longVal;
+            
+            if (targetType == typeof(bool))
+                return (T)(object)(element.ValueKind == JsonValueKind.True);
+            
+            if (targetType == typeof(double) && element.TryGetDouble(out var doubleVal))
+                return (T)(object)doubleVal;
+
+            return default(T)!;
+        }
+
+        private static object JsonElementToObject(JsonElement element) => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString()!,
+            JsonValueKind.Number => element.TryGetInt32(out int intValue) ? intValue :
+                                   element.TryGetInt64(out long longValue) ? longValue :
+                                   element.TryGetUInt32(out uint uintValue) ? uintValue :
+                                   element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null!,
+            JsonValueKind.Array => element.EnumerateArray().Select(JsonElementToObject).ToArray(),
+            JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => JsonElementToObject(p.Value)),
+            _ => element.GetRawText()
+        };
     }
 
     public class JsonRpcError

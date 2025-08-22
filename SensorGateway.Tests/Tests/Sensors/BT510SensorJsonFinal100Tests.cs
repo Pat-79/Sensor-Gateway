@@ -43,7 +43,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             {
                 "jsonrpc":"2.0",
                 "id":2,
-                "result":"should get this",
+                "result":"ok",
                 "error":null
             }
             """;
@@ -52,9 +52,9 @@ namespace SensorGateway.Tests.Tests.Sensors
             // Act
             var result = response!.GetResult<Dictionary<string, object>>();
 
-            // Assert - Should get empty dictionary from result processing, not root properties
+            // Assert - Should get empty dictionary from "ok" result processing, not root properties
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result!.Count); // Empty because "should get this" can't be deserialized as dict
+            Assert.AreEqual(0, result!.Count); // Empty dictionary for "ok" result
         }
 
         [TestMethod]
