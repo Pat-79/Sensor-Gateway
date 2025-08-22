@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using SensorGateway.Bluetooth;
@@ -15,7 +13,7 @@ namespace SensorGateway.Sensors.bt510
     public partial class BT510Sensor
     {
         #region Private Fields
-        private uint _nextId = 1;
+        private uint _nextId = 0;
         private bool _isInitialized = false;
         private bool _eventHandlerRegistered = false;
         private object _receiveLock = new object();
@@ -137,32 +135,6 @@ namespace SensorGateway.Sensors.bt510
                 return response.GetResult<T>(propertyName);
             }
             return default(T)!;
-        }
-
-        /// <summary>
-        /// Get a single property value with type safety (legacy method - use GetAsync&lt;T&gt; instead)
-        /// </summary>
-        /// <typeparam name="T">Expected property type</typeparam>
-        /// <param name="propertyName">Name of the property to retrieve</param>
-        /// <returns>Typed property value or default if not found</returns>
-        [Obsolete("Use GetAsync<T>(string propertyName) instead for better type safety")]
-        public async Task<T?> GetPropertyAsync<T>(string propertyName) where T : class
-        {
-            var response = await SendRequestAsync("get", new[] { propertyName });
-            return response?.GetResult<T>(propertyName);
-        }
-
-        /// <summary>
-        /// Get a single property value for value types (legacy method - use GetAsync&lt;T&gt; instead)
-        /// </summary>
-        /// <typeparam name="T">Expected property type (value type)</typeparam>
-        /// <param name="propertyName">Name of the property to retrieve</param>
-        /// <returns>Typed property value or default if not found</returns>
-        [Obsolete("Use GetAsync<T>(string propertyName) instead for better type safety")]
-        public async Task<T> GetPropertyValueAsync<T>(string propertyName) where T : struct
-        {
-            var response = await SendRequestAsync("get", new[] { propertyName });
-            return response?.GetResult<T>(propertyName) ?? default(T);
         }
 
         /// <summary>
@@ -325,28 +297,6 @@ namespace SensorGateway.Sensors.bt510
         #region High-Level Convenience Methods
 
         /// <summary>
-        /// Get common sensor configuration
-        /// </summary>
-        public async Task<Dictionary<string, object>?> GetConfigurationAsync(List<string>? properties = null)
-        {
-            // If no specific properties requested, return all common ones
-            if (properties == null || properties.Count == 0)
-            {
-                properties = new List<string>();
-            }
-
-            var response = await GetAsync(properties.ToArray());
-            return response;
-        }
-
-        /// <summary>
-        /// Update sensor configuration
-        /// </summary>
-        public async Task<bool> UpdateConfigurationAsync(Dictionary<string, object> config)
-        {
-            return await SetAsync(config);
-        }
-
         /// <summary>
         /// Download all available logs using configuration values
         /// </summary>

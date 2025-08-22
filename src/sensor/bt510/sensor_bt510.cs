@@ -235,12 +235,15 @@ namespace SensorGateway.Sensors.bt510
             return measurements;
         }
 
+        /// <summary>
+        /// Read measurement from advertisement data
+        /// </summary>
         private IEnumerable<Measurement> GetMeasurementsAdvertisement()
         {
             var advData = Device?.AdvertisementData;
             var measurements = new List<Measurement>();
 
-            if(advData == null || advData.Count == 0)
+            if (advData == null || advData.Count == 0)
             {
                 return measurements; // No advertisement data to process
             }
@@ -253,6 +256,9 @@ namespace SensorGateway.Sensors.bt510
             return measurements;
         }
 
+        /// <summary>
+        /// Downloads all log data from BT510 sensor using JSON-RPC commands
+        /// </summary>
         private async Task<IEnumerable<Measurement>> GetMeasurementsLogAsync()
         {
             // 1. Connect to device
@@ -297,57 +303,12 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task<bool> UpdateConfigurationAsync(Dictionary<string, object> configuration, CancellationToken cancellationToken = default)
         {
-            return await UpdateConfigurationAsync(configuration);
+            return await SetAsync(configuration);
         }
+
         #endregion
 
         #region Helper Methods
-
-        /// <summary>
-        /// Parses a data element from a log entry
-        /// </summary>
-        private IEnumerable<Measurement> ParseDataElement(System.Text.Json.JsonElement dataElement, DateTime timestamp)
-        {
-            var measurements = new List<Measurement>();
-
-            try
-            {
-                // Temperature
-                if (dataElement.TryGetProperty("temperature", out var tempElement) && 
-                    tempElement.TryGetDouble(out var temperature))
-                {
-                    measurements.Add(new Measurement
-                    {
-                        Type = MeasurementType.Temperature,
-                        Value = temperature,
-                        Unit = "°C",
-                        TimestampUtc = timestamp,
-                        Source = MeasurementSource.Log
-                    });
-                }
-
-                // Battery
-                if (dataElement.TryGetProperty("battery", out var batteryElement) && 
-                    batteryElement.TryGetDouble(out var battery))
-                {
-                    measurements.Add(new Measurement
-                    {
-                        Type = MeasurementType.Battery,
-                        Value = battery,
-                        Unit = "V",
-                        TimestampUtc = timestamp,
-                        Source = MeasurementSource.Log
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Warning: Failed to parse data element: {ex.Message}");
-            }
-
-            return measurements;
-        }
-
         /// <summary>
         /// Parses binary log data from BT510 into measurement objects using explicit little-endian format
         /// </summary>
@@ -457,89 +418,6 @@ namespace SensorGateway.Sensors.bt510
         {
             // Battery is stored as millivolts in an unsigned 16-bit number
             return data / 1000.0; // Convert to volts
-        }
-
-        /// <summary>
-        /// Helper method to display measurement data on the console in a formatted way
-        /// </summary>
-        public static void DisplayMeasurements(IEnumerable<Measurement> measurements)
-        {
-            var measurementList = measurements.ToList();
-            
-            if (!measurementList.Any())
-            {
-                Console.WriteLine("No measurements found.");
-                return;
-            }
-
-            Console.WriteLine($"\n📊 Found {measurementList.Count} measurements:");
-            Console.WriteLine(new string('=', 80));
-
-            // Group measurements by type for better display
-            var groupedMeasurements = measurementList
-                .GroupBy(m => m.Type)
-                .OrderBy(g => g.Key);
-
-            foreach (var group in groupedMeasurements)
-            {
-                Console.WriteLine($"\n🌡️  {group.Key} Measurements ({group.Count()} entries):");
-                Console.WriteLine(new string('-', 60));
-
-                var sortedMeasurements = group.OrderBy(m => m.TimestampUtc);
-
-                foreach (var measurement in sortedMeasurements)
-                {
-                    var timestamp = measurement.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss");
-                    var value = measurement.Value.ToString("F2");
-                    var unit = measurement.Unit;
-                    var source = measurement.Source;
-
-                    // Color coding for different measurement types
-                    var originalColor = Console.ForegroundColor;
-                    switch (measurement.Type)
-                    {
-                        case MeasurementType.Temperature:
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            break;
-                        case MeasurementType.Battery:
-                            Console.ForegroundColor = ConsoleColor.Green;
-                            break;
-                        default:
-                            Console.ForegroundColor = ConsoleColor.White;
-                            break;
-                    }
-
-                    Console.WriteLine($"  {timestamp} UTC | {value,8} {unit,-2} | {source}");
-                    Console.ForegroundColor = originalColor;
-                }
-            }
-
-            // Display summary statistics
-            Console.WriteLine($"\n📈 Summary Statistics:");
-            Console.WriteLine(new string('-', 40));
-
-            foreach (var group in groupedMeasurements)
-            {
-                var values = group.Select(m => m.Value).ToList();
-                var min = values.Min();
-                var max = values.Max();
-                var avg = values.Average();
-                var unit = group.First().Unit;
-
-                Console.WriteLine($"{group.Key,-12}: Min={min:F2}{unit}, Max={max:F2}{unit}, Avg={avg:F2}{unit}");
-            }
-
-            // Display time range
-            var earliestTime = measurementList.Min(m => m.TimestampUtc);
-            var latestTime = measurementList.Max(m => m.TimestampUtc);
-            var timeSpan = latestTime - earliestTime;
-
-            Console.WriteLine($"\n🕐 Time Range:");
-            Console.WriteLine($"   From: {earliestTime:yyyy-MM-dd HH:mm:ss} UTC");
-            Console.WriteLine($"   To:   {latestTime:yyyy-MM-dd HH:mm:ss} UTC");
-            Console.WriteLine($"   Span: {timeSpan.TotalHours:F1} hours");
-            
-            Console.WriteLine(new string('=', 80));
         }
         #endregion
     }
