@@ -21,6 +21,10 @@ namespace SensorGateway.Sensors.bt510
     /// </summary>
     public partial class BT510Sensor : Sensor, IAsyncInitializable
     {
+        /// <summary>
+        /// Network ID for the sensor, used for grouping or identification in multi-sensor setups
+        /// </summary>
+        public UInt16 NetworkId { get; set; }
         private readonly SensorConfig _sensorConfig;
         private readonly BT510Config _bt510Config;
         private int _mtu = 244; // Default MTU size for BLE
@@ -359,32 +363,46 @@ namespace SensorGateway.Sensors.bt510
         #region Helper Methods
         public IEnumerable<Measurement> ParseAdvertisementEntry(byte[] advertisementData)
         {
+            /*
+                Note: bytes 0 .. 6 of the documentation are not included in the data.
+                The Company ID (0x0077) should be at bytes 5 and 6 (little-endian).
+                The bytes 0 .. 4 hold Bluetooth LE flags and other non-BT510 data.
+
+                Therefore, these bytes are not part of the advertisementData parameter of this method. 
+                This means that the total length of the data is not 31 bytes, but 24 bytes (31 - 7 = 24). 
+
+                The advertisement data format that is received in this method for BT510 according 
+                to the 1M PHY specification is as follows:
+                byte: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 
+                date: 01 00 00 00 03 80 E9 EB 16 2B A6 ED 01 FD 02 C8 22 AA 68 98 08 00 00 02 
+            */
             var measurements = new List<Measurement>();
 
-            if (advertisementData == null || advertisementData.Length < 31)
+            if (advertisementData == null || advertisementData.Length < 24)
             {
                 return measurements; // No advertisement data to process
             }
 
             try
             {
-                // Parse BT510 advertisement data according to 1M PHY specification (31 bytes total)
+                // Parse BT510 advertisement data according to 1M PHY specification (24 bytes total)
                 // Reference: BT510 EZ Guide pages 7-8, Table 1: 1M PHY
+                // Note: Bytes 0-6 from documentation are stripped (BLE flags + Company ID)
+                var networkId = BinaryPrimitives.ReadUInt16LittleEndian(advertisementData.AsSpan(0, 2));
+                NetworkId = networkId; // Store network ID in property
+                
+                // Parse the record header (adjusted for 24-byte format)
+                var recordType = advertisementData[12];     // Byte 12: Record Type - See 4.1.4 Record Event Types
+                var recordNumber = BinaryPrimitives.ReadUInt16LittleEndian(advertisementData.AsSpan(13, 2));
 
-                // Parse the record header
-                var recordType = advertisementData[19];     // Byte 19: Record Type - See 4.1.4 Record Event Types
-                var recordNumberLSB = advertisementData[20]; // Byte 20: Record Number LSB
-                var recordNumberMSB = advertisementData[21]; // Byte 21: Record Number MSB
-                var recordNumber = (ushort)(recordNumberLSB | (recordNumberMSB << 8));
+                // Parse epoch timestamp (bytes 15-18)
+                var epoch = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(15, 4));
 
-                // Parse epoch timestamp (bytes 22-25)
-                var epoch = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(22, 4));
-
-                // Parse sensor data (bytes 26-29: Data byte 0, Data byte 1, Data byte 2 MSB, Data byte 3 MSB)
+                // Parse sensor data (bytes 19-22: Data byte 0, Data byte 1, Data byte 2 MSB, Data byte 3 MSB)
                 // Advertisement uses 32-bit data value (4 bytes) vs 16-bit in log data
-                var sensorData = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(26, 4));
+                var sensorData = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(19, 4));
 
-                // Note: Byte 30 is "Reset Count LSB" for testing purposes
+                // Note: Byte 23 is "Reset Count LSB" for testing purposes
 
                 // Convert epoch to DateTime
                 var timestamp = DateTimeOffset.FromUnixTimeSeconds(epoch).DateTime;

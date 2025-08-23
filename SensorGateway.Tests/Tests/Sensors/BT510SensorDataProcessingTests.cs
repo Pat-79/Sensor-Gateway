@@ -377,47 +377,53 @@ namespace SensorGateway.Tests.Tests.Sensors
 
         /// <summary>
         /// Test parsing advertisement data from PDF document section 4.4.1 (page 13)
-        /// Data: 0201061BFF77000100000000808E1F1D4335E20C030008B1D55DB80B00000210FFE4000300000001030A00000000000806094254353130
+        /// Verifies that BT510 advertisement data can be parsed correctly
         /// </summary>
         [TestMethod]
         public void ParseAdvertisementEntry_WithPDFExampleData_ShouldReturnCorrectMeasurement()
         {
             // Arrange - Data from PDF document section 4.4.1, page 13
-            // Advertisement data for BT510 device
-            var hexString = "0201061BFF77000100000000808E1F1D4335E20C030008B1D55DB80B00000210FFE4000300000001030A00000000000806094254353130";
-            var advertisementData = ConvertHexStringToByteArray(hexString);
+            var fullHexString = "0201061BFF77000100000000808E1F1D4335E20C030008B1D55DB80B00000210FFE4000300000001030A00000000000806094254353130";
+            var fullAdvertisementData = ConvertHexStringToByteArray(fullHexString);
+
+            // Extract only the manufacturer-specific data portion (after BLE headers)
+            // The BT510Sensor.ParseAdvertisementEntry expects only the manufacturer data (24 bytes)
+            // Full structure: [BLE Headers: 7 bytes] + [Manufacturer Data: 24 bytes] + [Additional Data: 24 bytes]
+            // We need bytes 7-30 (24 bytes) which is the manufacturer-specific data
+            
+            // Based on the BLE structure:
+            // Bytes 0-2: Flags (02 01 06)
+            // Bytes 3-6: Manufacturer header (1B FF 77 00)
+            // Bytes 7-30: BT510 manufacturer data (24 bytes) - this is what ParseAdvertisementEntry expects
+            
+            var manufacturerData = new byte[24];
+            Array.Copy(fullAdvertisementData, 7, manufacturerData, 0, 24);
+
+            // Debug: Print the manufacturer data being parsed
+            var manufacturerHex = Convert.ToHexString(manufacturerData).ToLower();
+            Console.WriteLine($"Manufacturer data (24 bytes): {string.Join(" ", Enumerable.Range(0, manufacturerData.Length).Select(i => $"{manufacturerData[i]:x2}"))}");
 
             // Act
-            var result = _sensor.ParseAdvertisementEntry(advertisementData);
+            var result = _sensor.ParseAdvertisementEntry(manufacturerData);
 
             // Assert
             Assert.IsNotNull(result);
             var measurements = result.ToList();
-            Assert.AreEqual(1, measurements.Count);
+            Assert.AreEqual(1, measurements.Count, "Should parse one measurement from the advertisement data");
 
             var measurement = measurements[0];
 
-            // Let's examine what the actual data contains and adjust our expectations
-            // The record type is at byte 19 in the advertisement data
-            var recordType = advertisementData[19];
-
-            // Verify the measurement matches what's actually in the data
-            if (recordType == 1) // TEMPERATURE
-            {
-                Assert.AreEqual(MeasurementType.Temperature, measurement.Type);
-                Assert.AreEqual("°C", measurement.Unit);
-            }
-            else if (recordType == 12 || recordType == 13 || recordType == 16) // BATTERY types
-            {
-                Assert.AreEqual(MeasurementType.Battery, measurement.Type);
-                Assert.AreEqual("V", measurement.Unit);
-            }
-
+            // Based on the PDF data, this should be a battery measurement (event type 12 at byte 19 of full data = byte 12 of manufacturer data)
+            Assert.AreEqual(MeasurementType.Battery, measurement.Type);
+            Assert.AreEqual("V", measurement.Unit);
             Assert.AreEqual(MeasurementSource.Advertisement, measurement.Source);
 
-            // Verify the data is parsed correctly regardless of type
-            Assert.IsTrue(measurement.Value > 0, "Measurement value should be positive");
+            // Verify the measurement has reasonable values
+            Assert.IsTrue(measurement.Value > 0, "Battery voltage should be positive");
+            Assert.IsTrue(measurement.Value < 10, "Battery voltage should be reasonable");
             Assert.IsTrue(measurement.TimestampUtc > DateTime.MinValue, "Should have a valid timestamp");
+
+            Console.WriteLine($"✅ Parsed measurement: {measurement.Value} {measurement.Unit} at {measurement.TimestampUtc:yyyy-MM-dd HH:mm:ss} UTC");
         }
 
         /// <summary>

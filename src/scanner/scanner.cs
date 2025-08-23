@@ -205,8 +205,21 @@ namespace SensorGateway.Gateway
 
                                 discoveredCount++;
 
+                                var advData = new Dictionary<ushort, byte[]>();
+                                if (mData != null && mData.Any())
+                                {
+                                    foreach (var kvp in mData)
+                                    {
+                                        advData.Add(kvp.Key, kvp.Value as byte[] ?? Array.Empty<byte>());
+                                    }
+                                }
+                                else
+                                {
+                                    Console.WriteLine("   - No manufacturer data available");
+                                }
+
                                 // Thread-safe event invocation
-                                var deviceDiscoveredArgs = new DeviceDiscoveredEventArgs(device, deviceName, deviceAddress, matchedPrefix);
+                                var deviceDiscoveredArgs = new DeviceDiscoveredEventArgs(device, deviceName, deviceAddress, advData, matchedPrefix);
                                 InvokeEventAsync(DeviceDiscovered, deviceDiscoveredArgs);
 
                                 // Start worker process without waiting
@@ -532,12 +545,14 @@ namespace SensorGateway.Gateway
         public string DeviceAddress { get; }
         public string MatchedPrefix { get; }
         public DateTime DiscoveredAt { get; }
+        public Dictionary<ushort, byte[]>? ManufacturerData { get; }
 
-        public DeviceDiscoveredEventArgs(Device device, string deviceName, string deviceAddress, string matchedPrefix)
+        public DeviceDiscoveredEventArgs(Device device, string deviceName, string deviceAddress, Dictionary<ushort, byte[]> manufacturerData, string matchedPrefix)
         {
             Device = device;
             DeviceName = deviceName;
             DeviceAddress = deviceAddress;
+            ManufacturerData = manufacturerData;
             MatchedPrefix = matchedPrefix;
             DiscoveredAt = DateTime.Now;
         }
