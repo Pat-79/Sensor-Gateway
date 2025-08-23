@@ -23,21 +23,34 @@ namespace SensorGateway.Tests.Tests.Sensors
         [TestMethod]
         public void ValidateNewBehavior_OkStringHandling()
         {
-            var response = new JsonRpcResponse { Result = "ok" };
+            var okResponse = new JsonRpcResponse { Result = "ok" };
+            var nonOkResponse = new JsonRpcResponse { Result = "something" };
             
             // Test how "ok" is handled for different types
-            var stringResult = response.GetResult<string>();
-            var dictResult = response.GetResult<Dictionary<string, object>>();
-            var boolResult = response.GetResult<bool>();
+            var okStringResult = okResponse.GetResult<string>();
+            var okDictResult = okResponse.GetResult<Dictionary<string, object>>();
+            var okBoolResult = okResponse.GetResult<bool>();
             
-            // Document the actual behavior
-            Console.WriteLine($"String result: {stringResult}");
-            Console.WriteLine($"Dict result: {dictResult?.Count} items");
-            Console.WriteLine($"Bool result: {boolResult}");
-            
+            // Test how "something" is handled for different types
+            var nonOkStringResult = nonOkResponse.GetResult<string>();
+            var nonOkDictResult = nonOkResponse.GetResult<Dictionary<string, object>>();
+            var nonOkBoolResult = nonOkResponse.GetResult<bool>();
+
+            // Document the actual behavior (OK)
+            Console.WriteLine($"String result: {okStringResult}");
+            Console.WriteLine($"Dict result: {okDictResult?.Count} items");
+            Console.WriteLine($"Bool result: {okBoolResult}");
+
+            // Document the actual behavior (non-OK)
+            Console.WriteLine($"String result: {nonOkStringResult}");
+            Console.WriteLine($"Dict result: {nonOkDictResult?.Count} items");
+            Console.WriteLine($"Bool result: {nonOkBoolResult}");
+
             // Update assertions based on actual behavior
-            Assert.IsNotNull(stringResult);
-            Assert.IsNotNull(dictResult);
+            Assert.IsNotNull(okStringResult);
+            Assert.IsNotNull(okDictResult);
+            Assert.IsNotNull(nonOkStringResult);
+            Assert.IsNotNull(nonOkDictResult);
         }
 
         [TestMethod]
@@ -52,7 +65,7 @@ namespace SensorGateway.Tests.Tests.Sensors
         }
 
         [TestMethod]
-        public void ValidateNewBehavior_NumberConversion()
+        public void ValidateNewBehavior_NumberConversionInteger()
         {
             var jsonResponse = """
             {
@@ -82,18 +95,23 @@ namespace SensorGateway.Tests.Tests.Sensors
             // Test the difference between empty string and "ok" string
             var emptyResponse = new JsonRpcResponse { Result = "" };
             var okResponse = new JsonRpcResponse { Result = "ok" };
+            var nonOkResponse = new JsonRpcResponse { Result = "something" };
             
             var emptyResult = emptyResponse.GetResult<Dictionary<string, object>>();
             var okResult = okResponse.GetResult<Dictionary<string, object>>();
+            var nonOkResult = nonOkResponse.GetResult<Dictionary<string, object>>();
             
             // Document the behavior difference
             Console.WriteLine($"Empty string result: {emptyResult}");
             Console.WriteLine($"OK string result: {okResult?.Count} items");
+            Console.WriteLine($"Non-OK string result: {nonOkResult?.Count} items");
             
             // Validate the optimized behavior
             Assert.IsNull(emptyResult, "Empty string should return null");
             Assert.IsNotNull(okResult, "OK string should return empty dictionary");
             Assert.AreEqual(0, okResult!.Count, "OK result should be empty dictionary");
+            Assert.IsNotNull(nonOkResult, "Non-OK string should return empty dictionary");
+            Assert.AreEqual(0, nonOkResult!.Count, "Non-OK result should be empty dictionary");
         }
     }
 }
