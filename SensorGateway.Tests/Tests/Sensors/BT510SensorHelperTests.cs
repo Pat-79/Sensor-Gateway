@@ -195,7 +195,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNotNull(result);
@@ -215,7 +215,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNotNull(result);
@@ -235,7 +235,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNotNull(result);
@@ -255,7 +255,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNotNull(result);
@@ -275,7 +275,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             if (result != null)
@@ -299,7 +299,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNull(result);
@@ -314,7 +314,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNull(result);
@@ -329,7 +329,7 @@ namespace SensorGateway.Tests.Tests.Sensors
             var timestamp = new DateTime(2025, 1, 15, 12, 30, 45, DateTimeKind.Utc);
 
             // Act
-            var result = _sensor!.CreateMeasurementFromEvent(eventType, data, timestamp);
+            var result = _sensor!.CreateMeasurementFromEventLogbook(eventType, data, timestamp);
 
             // Assert
             Assert.IsNotNull(result);
