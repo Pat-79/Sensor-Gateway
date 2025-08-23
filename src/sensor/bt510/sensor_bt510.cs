@@ -226,7 +226,7 @@ namespace SensorGateway.Sensors.bt510
         /// </summary>
         public override async Task<IEnumerable<Measurement>> GetMeasurementsAsync(MeasurementSource source = MeasurementSource.Both, CancellationToken cancellationToken = default)
         {
-            // 0. Check if Device is null
+            // Check if Device is null
             if (cancellationToken.IsCancellationRequested)
             {
                 throw new OperationCanceledException("DownloadLogAsync was canceled.", cancellationToken);
@@ -234,19 +234,20 @@ namespace SensorGateway.Sensors.bt510
 
             var measurements = new List<Measurement>();
 
+            // Get measurements from advertisement data if requested
             if (source == MeasurementSource.Advertisement || source == MeasurementSource.Both)
             {
                 measurements.AddRange(GetMeasurementsAdvertisement());
             }
 
+            // Get measurements from log data if requested
             if (source == MeasurementSource.Log || source == MeasurementSource.Both)
             {
-
-                // 4. Parse the data into structured measurements
                 measurements.AddRange(await GetMeasurementsLogAsync());
             }
             
-            return measurements;
+            // Sort measurements by timestamp before returning
+            return measurements.OrderBy(m => m.TimestampUtc).ToList().AsReadOnly();
         }
 
         /// <summary>
