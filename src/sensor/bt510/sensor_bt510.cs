@@ -385,12 +385,19 @@ namespace SensorGateway.Sensors.bt510
 
             try
             {
+                var protocolId = BinaryPrimitives.ReadUInt16LittleEndian(advertisementData.AsSpan(0, 2));
+                if (protocolId != 0x0001)
+                {
+                    // Not a BT510 advertisement, ignore
+                    return measurements;
+                }
+
                 // Parse BT510 advertisement data according to 1M PHY specification (24 bytes total)
                 // Reference: BT510 EZ Guide pages 7-8, Table 1: 1M PHY
                 // Note: Bytes 0-6 from documentation are stripped (BLE flags + Company ID)
-                var networkId = BinaryPrimitives.ReadUInt16LittleEndian(advertisementData.AsSpan(0, 2));
+                var networkId = BinaryPrimitives.ReadUInt16LittleEndian(advertisementData.AsSpan(2, 2));
                 NetworkId = networkId; // Store network ID in property
-                
+
                 // Parse the record header (adjusted for 24-byte format)
                 var recordType = advertisementData[12];     // Byte 12: Record Type - See 4.1.4 Record Event Types
                 var recordNumber = BinaryPrimitives.ReadUInt16LittleEndian(advertisementData.AsSpan(13, 2));
@@ -402,8 +409,6 @@ namespace SensorGateway.Sensors.bt510
                 // Advertisement uses 32-bit data value (4 bytes) vs 16-bit in log data
                 var sensorData = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(19, 4));
 
-                // Note: Byte 23 is "Reset Count LSB" for testing purposes
-
                 // Convert epoch to DateTime
                 var timestamp = DateTimeOffset.FromUnixTimeSeconds(epoch).DateTime;
 
@@ -413,6 +418,7 @@ namespace SensorGateway.Sensors.bt510
                 {
                     // Override source to Advertisement since this came from advertisement data
                     measurement.Source = MeasurementSource.Advertisement;
+                    measurement.ID = recordNumber; 
                     measurements.Add(measurement);
                 }
             }
@@ -453,6 +459,8 @@ namespace SensorGateway.Sensors.bt510
                     var measurement = CreateMeasurementFromEventLogbook(type, data, eventTime);
                     if (measurement != null)
                     {
+                        measurement.Source = MeasurementSource.Log;
+                        measurement.ID = (ulong)(i + 1);
                         measurements.Add(measurement);
                     }
                 }

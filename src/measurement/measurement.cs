@@ -58,6 +58,11 @@ namespace SensorGateway.Gateway
         /// The source of the measurement (log or advertisement)
         /// </summary>
         public MeasurementSource Source { get; set; } = MeasurementSource.Both;
+
+        /// <summary>
+        /// Optional measurement ID associated with the measurement
+        /// </summary>
+        public ulong? ID { get; set; }
     }
     #endregion
 
