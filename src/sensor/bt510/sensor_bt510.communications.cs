@@ -308,7 +308,7 @@ namespace SensorGateway.Sensors.bt510
                 return null;
             }
 
-            var logData = await ReadLogAsync(500);
+            var logData = await ReadLogAsync((int)prepLog);
             return logData;
         }
 

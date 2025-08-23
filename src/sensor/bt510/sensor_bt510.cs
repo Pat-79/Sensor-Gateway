@@ -148,33 +148,20 @@ namespace SensorGateway.Sensors.bt510
         {
             try
             {
+                // 0. Check if Device is null
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException("DownloadLogAsync was canceled.", cancellationToken);
+                }
+                
                 // 1. Connect to device
                 await OpenAsync();
 
                 // 2. Synchronize time to ensure accurate timestamps
                 await SynchronizeTimeAsync();
 
-                // 3. Download all log data using the convenience method                
-                var measurements = await GetMeasurementsAsync(MeasurementSource.Log, cancellationToken);
-
-                // 4. Call callback method if provided
-                var callbackResult = true;
-                if (callback != null)
-                {
-                    callbackResult = callback(measurements);
-                }
-
-                // 5. Do acknowledgment (if callback was successful)
-                if (callbackResult)
-                {
-                    var ackCount = await AckLogAsync(measurements.Count());
-                    if (ackCount < measurements.Count())
-                    {
-                        Console.WriteLine($"Warning: Only {ackCount} out of {measurements.Count()} log entries acknowledged.");
-                    }
-                }
-
-                return measurements;
+                // 3. Download, process, and acknowledge logs in batches
+                return await ProcessLogBatchesAsync(callback, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -183,7 +170,7 @@ namespace SensorGateway.Sensors.bt510
             }
             finally
             {
-                // 6. Disconnect from device
+                // 7. Disconnect from device
                 try
                 {
                     await CloseAsync();
@@ -194,7 +181,49 @@ namespace SensorGateway.Sensors.bt510
                     Console.WriteLine($"Warning: Failed to disconnect from BT510 sensor: {ex.Message}");
                 }
             }
+        }
 
+        internal async Task<IEnumerable<Measurement>> ProcessLogBatchesAsync(ISensor.ExecuteAfterDownload? callback = null, CancellationToken cancellationToken = default)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException("DownloadLogAsync was canceled.", cancellationToken);
+            }
+
+            // 3. Download, process, and acknowledge logs in batches
+            var allMeasurements = new List<Measurement>();
+            uint logCount;
+
+            const int maxLoops = 10;
+            int loopCount = 0;
+
+            while ((logCount = await PrepareLogAsync() ?? 0) > 0 && loopCount < maxLoops)
+            {
+                loopCount++;
+
+                // 4. Download log batch
+                var batchMeasurements = await GetMeasurementsAsync(MeasurementSource.Log, cancellationToken);
+                allMeasurements.AddRange(batchMeasurements);
+
+                // 5. Call callback and handle acknowledgment
+                var shouldAck = callback?.Invoke(batchMeasurements) ?? true;
+
+                if (shouldAck)
+                {
+                    var ackCount = await AckLogAsync(batchMeasurements.Count());
+                    if (ackCount < batchMeasurements.Count())
+                    {
+                        Console.WriteLine($"Warning: Only {ackCount} out of {batchMeasurements.Count()} log entries acknowledged.");
+                    }
+                }
+            }
+
+            if (loopCount >= maxLoops)
+            {
+                Console.WriteLine($"Warning: Maximum loop limit ({maxLoops}) reached while processing log data.");
+            }
+
+            return allMeasurements.AsEnumerable();
         }
 
         /// <summary>
@@ -252,6 +281,7 @@ namespace SensorGateway.Sensors.bt510
 
         /// <summary>
         /// Read measurement from advertisement data
+        /// Parse BT510 advertisement data according to the 1M PHY specification
         /// </summary>
         private IEnumerable<Measurement> GetMeasurementsAdvertisement()
         {
@@ -263,12 +293,15 @@ namespace SensorGateway.Sensors.bt510
                 return measurements; // No advertisement data to process
             }
 
-            foreach (var data in advData)
+            advData.TryGetValue(0x00FF, out var manufacturerDataObj); // 0x00FF = Manufacturer Specific Data
+            if(manufacturerDataObj is not byte[] manufacturerData || manufacturerData.Length < 31)
             {
-                // Do magic parsing here
+                return measurements; // No valid manufacturer data
             }
-
-            return measurements;
+            else 
+            {
+                return ParseAdvertisementEntry(manufacturerData);
+            }
         }
 
         /// <summary>
@@ -324,6 +357,55 @@ namespace SensorGateway.Sensors.bt510
         #endregion
 
         #region Helper Methods
+        public IEnumerable<Measurement> ParseAdvertisementEntry(byte[] advertisementData)
+        {
+            var measurements = new List<Measurement>();
+
+            if (advertisementData == null || advertisementData.Length < 31)
+            {
+                return measurements; // No advertisement data to process
+            }
+
+            try
+            {
+                // Parse BT510 advertisement data according to 1M PHY specification (31 bytes total)
+                // Reference: BT510 EZ Guide pages 7-8, Table 1: 1M PHY
+
+                // Parse the record header
+                var recordType = advertisementData[19];     // Byte 19: Record Type - See 4.1.4 Record Event Types
+                var recordNumberLSB = advertisementData[20]; // Byte 20: Record Number LSB
+                var recordNumberMSB = advertisementData[21]; // Byte 21: Record Number MSB
+                var recordNumber = (ushort)(recordNumberLSB | (recordNumberMSB << 8));
+
+                // Parse epoch timestamp (bytes 22-25)
+                var epoch = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(22, 4));
+
+                // Parse sensor data (bytes 26-29: Data byte 0, Data byte 1, Data byte 2 MSB, Data byte 3 MSB)
+                // Advertisement uses 32-bit data value (4 bytes) vs 16-bit in log data
+                var sensorData = BinaryPrimitives.ReadUInt32LittleEndian(advertisementData.AsSpan(26, 4));
+
+                // Note: Byte 30 is "Reset Count LSB" for testing purposes
+
+                // Convert epoch to DateTime
+                var timestamp = DateTimeOffset.FromUnixTimeSeconds(epoch).DateTime;
+
+                // Create measurement based on record type
+                var measurement = CreateMeasurementFromEventAdvertisement(recordType, sensorData, timestamp);
+                if (measurement != null)
+                {
+                    // Override source to Advertisement since this came from advertisement data
+                    measurement.Source = MeasurementSource.Advertisement;
+                    measurements.Add(measurement);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to parse BT510 advertisement data: {ex.Message}");
+            }
+            
+            return measurements;
+        }
+        
         /// <summary>
         /// Parses binary log data from BT510 into measurement objects using explicit little-endian format
         /// </summary>
@@ -339,7 +421,7 @@ namespace SensorGateway.Sensors.bt510
                 for (int i = 0; i < eventCount; i++)
                 {
                     var eventOffset = i * eventSize;
-                    
+
                     // Explicitly handle little-endian format regardless of host architecture
                     var timestamp = BinaryPrimitives.ReadUInt32LittleEndian(logData.AsSpan(eventOffset, 4));
                     var data = BinaryPrimitives.ReadUInt16LittleEndian(logData.AsSpan(eventOffset + 4, 2));
@@ -350,7 +432,7 @@ namespace SensorGateway.Sensors.bt510
                     var eventTime = DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime;
 
                     // Process based on event type
-                    var measurement = CreateMeasurementFromEvent(type, data, eventTime);
+                    var measurement = CreateMeasurementFromEventLogbook(type, data, eventTime);
                     if (measurement != null)
                     {
                         measurements.Add(measurement);
@@ -366,9 +448,25 @@ namespace SensorGateway.Sensors.bt510
         }
 
         /// <summary>
-        /// Creates a measurement from a BT510 event based on the event type
+        /// Creates a measurement from a BT510 event based on the event type (16-bit log data)
         /// </summary>
-        internal Measurement? CreateMeasurementFromEvent(byte eventType, ushort data, DateTime timestamp)
+        internal Measurement? CreateMeasurementFromEventLogbook(byte eventType, ushort data, DateTime timestamp)
+        {
+            return CreateMeasurementFromEvent(eventType, (uint)data, timestamp, MeasurementSource.Log);
+        }
+
+        /// <summary>
+        /// Creates a measurement from a BT510 advertisement event (32-bit data)
+        /// </summary>
+        internal Measurement? CreateMeasurementFromEventAdvertisement(byte eventType, uint data, DateTime timestamp)
+        {
+            return CreateMeasurementFromEvent(eventType, data, timestamp, MeasurementSource.Advertisement);
+        }
+
+        /// <summary>
+        /// Creates a measurement from a BT510 event based on the event type (unified implementation)
+        /// </summary>
+        private Measurement? CreateMeasurementFromEvent(byte eventType, uint data, DateTime timestamp, MeasurementSource source)
         {
             return eventType switch
             {
@@ -378,7 +476,7 @@ namespace SensorGateway.Sensors.bt510
                     Value = ConvertTemperatureData(data),
                     Unit = "°C",
                     TimestampUtc = timestamp,
-                    Source = MeasurementSource.Log
+                    Source = source
                 },
                 12 => new Measurement // BATTERY GOOD
                 {
@@ -386,7 +484,7 @@ namespace SensorGateway.Sensors.bt510
                     Value = ConvertBatteryData(data),
                     Unit = "V",
                     TimestampUtc = timestamp,
-                    Source = MeasurementSource.Log
+                    Source = source
                 },
                 13 => new Measurement // ADVERTISE ON BUTTON (also has battery data)
                 {
@@ -394,7 +492,7 @@ namespace SensorGateway.Sensors.bt510
                     Value = ConvertBatteryData(data),
                     Unit = "V",
                     TimestampUtc = timestamp,
-                    Source = MeasurementSource.Log
+                    Source = source
                 },
                 16 => new Measurement // BATTERY BAD
                 {
@@ -402,7 +500,7 @@ namespace SensorGateway.Sensors.bt510
                     Value = ConvertBatteryData(data),
                     Unit = "V",
                     TimestampUtc = timestamp,
-                    Source = MeasurementSource.Log
+                    Source = source
                 },
                 4 or 5 or 6 or 7 or 8 or 9 or 10 => new Measurement // Temperature alarms
                 {
@@ -410,29 +508,29 @@ namespace SensorGateway.Sensors.bt510
                     Value = ConvertTemperatureData(data),
                     Unit = "°C",
                     TimestampUtc = timestamp,
-                    Source = MeasurementSource.Log
+                    Source = source
                 },
                 _ => null // Ignore other event types for now
             };
         }
 
         /// <summary>
-        /// Converts temperature data from hundredths of degrees C (signed 16-bit)
+        /// Converts temperature data from hundredths of degrees C (16-bit unsigned, convert to signed for temperature)
         /// </summary>
-        internal double ConvertTemperatureData(ushort data)
+        internal double ConvertTemperatureData(uint data)
         {
-            // Temperature is stored as hundredths of degrees C in a signed 16-bit number
-            var signedData = unchecked((short)data);
+            // Temperature is stored as unsigned initially, but needs two's complement conversion to signed
+            var signedData = unchecked((short)data); // Two's complement conversion to signed
             return signedData / 100.0;
         }
 
         /// <summary>
-        /// Converts battery data from millivolts (unsigned 16-bit)
+        /// Converts battery data from millivolts (16-bit unsigned)
         /// </summary>
-        internal double ConvertBatteryData(ushort data)
+        internal double ConvertBatteryData(uint data)
         {
-            // Battery is stored as millivolts in an unsigned 16-bit number
-            return data / 1000.0; // Convert to volts
+            // Battery data remains unsigned (no conversion needed)
+            return data / 1000.0; // Convert from millivolts to volts
         }
         #endregion
     }
