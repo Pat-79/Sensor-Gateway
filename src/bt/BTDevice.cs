@@ -142,7 +142,7 @@ namespace SensorGateway.Bluetooth
                 () => Address,
                 () => _buffer.ClearBufferAsync()
             );
-            
+
             // Initialize communication first to avoid circular dependency
             _communication = new BTDeviceCommunication(
                 () => _services?.CurrentService,
@@ -153,7 +153,7 @@ namespace SensorGateway.Bluetooth
                 () => _connection.ConnectAsync(),
                 (uuid, data) => OnNotificationDataReceived(uuid, data)
             );
-            
+
             _services = new BTDeviceServices(
                 () => _connection.IsConnectedAsync(),
                 () => _connection.ConnectAsync(),
@@ -164,8 +164,8 @@ namespace SensorGateway.Bluetooth
             // Forward communication events
             _communication.NotificationDataReceived += (sender, data, uuid) => NotificationDataReceived?.Invoke(this, data, uuid);
 
-            // Initialize device
-            InitializeDeviceAsync().GetAwaiter().GetResult();
+            // Initialize device (sync call in constructor)
+            _ = Task.Run(async () => await InitializeDeviceAsync());
         }
         #endregion
 

@@ -164,7 +164,12 @@ namespace SensorGateway.Gateway
             // Thread-safe event invocation
             InvokeEventAsync(ScanStarted, new ScanStartedEventArgs(prefixList, scanDuration));
 
-            var adapter = await BlueZManager.GetAdapterAsync(AppConfig.Bluetooth.AdapterName);
+            var adapter = await BTAdapter.Instance.GetAdapterAsync();
+            if(adapter == null)
+            {
+                Console.WriteLine($"❌ Bluetooth adapter '{AppConfig.Bluetooth.AdapterName}' not found. Scan aborted.");
+                return 0;
+            }
             var discoveredCount = 0;
             var scanEndTime = DateTime.Now.Add(scanDuration);
 

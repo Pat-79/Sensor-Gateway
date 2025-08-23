@@ -69,30 +69,10 @@ namespace SensorGateway.Bluetooth
         /// <returns>A task that represents the asynchronous adapter initialization operation.</returns>
         private async Task InitializeAdapterAsync()
         {
-            _adapter = await BlueZManager.GetAdapterAsync(AppConfig.Bluetooth.AdapterName);
+            _adapter = await BTAdapter.Instance.GetAdapterAsync();
             if (_adapter == null)
             {
                 throw new InvalidOperationException($"Bluetooth adapter '{AppConfig.Bluetooth.AdapterName}' not found.");
-            }
-
-            // Check and set power state in one operation if needed
-            if (!await _adapter.GetPoweredAsync())
-            {
-                await _adapter.SetPoweredAsync(true).ConfigureAwait(false);
-
-                // Poll for power state instead of fixed delay
-                var timeout = TimeSpan.FromSeconds(BTDeviceConstants.ADAPTER_POWER_TIMEOUT_SECONDS);
-                var start = DateTime.UtcNow;
-
-                while (!await _adapter.GetPoweredAsync() && DateTime.UtcNow - start < timeout)
-                {
-                    await Task.Delay(BTDeviceConstants.WAIT_LOOP_DELAY).ConfigureAwait(false);
-                }
-
-                if (!await _adapter.GetPoweredAsync())
-                {
-                    throw new InvalidOperationException($"Failed to power on adapter '{AppConfig.Bluetooth.AdapterName}' within timeout.");
-                }
             }
         }
 
