@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SensorGateway.Configuration;
 using HashtagChris.DotNetBlueZ;
+using System.Collections.Generic;
 
 namespace SensorGateway.Bluetooth
 {
@@ -123,6 +124,152 @@ namespace SensorGateway.Bluetooth
             finally
             {
                 _initializationSemaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// Starts scanning for Bluetooth devices with fresh advertisement data
+        /// </summary>
+        /// <param name="onDeviceFound">Callback when a device is found</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        public async Task StartScanningAsync(Action<Device> onDeviceFound, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            
+            var adapter = await GetAdapterAsync(cancellationToken);
+
+            // Clear any cached advertisement data first
+            await adapter.SetDiscoveryFilterAsync(new Dictionary<string, object>
+            {
+                ["DuplicateData"] = false,  // Don't filter duplicates - we want fresh data
+                ["Transport"] = "le"        // Low Energy only
+            });
+
+            // Stop any existing discovery to clear cache
+            if (await adapter.GetDiscoveringAsync())
+            {
+                await adapter.StopDiscoveryAsync();
+                await Task.Delay(1000, cancellationToken); // Wait for stop to complete
+            }
+
+            // Start fresh discovery
+            await adapter.StartDiscoveryAsync();
+            
+            adapter.DeviceFound += (sender, args) =>
+            {
+                try
+                {
+                    var device = args.Device;
+                    onDeviceFound?.Invoke(device);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing found device: {ex.Message}");
+                }
+                return Task.CompletedTask;
+            };
+        }
+
+        /// <summary>
+        /// Starts continuous scanning with periodic discovery restart to ensure fresh advertisement data
+        /// </summary>
+        /// <param name="onDeviceFound">Callback when a device is found</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        public async Task StartContinuousScanningAsync(Action<Device> onDeviceFound, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            
+            var adapter = await GetAdapterAsync(cancellationToken);
+            
+            var lastDiscoveryRestart = DateTime.MinValue;
+            const int discoveryRestartIntervalSeconds = 30;
+            bool eventHandlerSet = false;
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    // Restart discovery periodically to clear cached advertisement data
+                    if (DateTime.UtcNow.Subtract(lastDiscoveryRestart).TotalSeconds >= discoveryRestartIntervalSeconds)
+                    {
+                        // Stop existing discovery
+                        if (await adapter.GetDiscoveringAsync())
+                        {
+                            await adapter.StopDiscoveryAsync();
+                            await Task.Delay(500, cancellationToken);
+                        }
+
+                        // Configure discovery filter for fresh data
+                        await adapter.SetDiscoveryFilterAsync(new Dictionary<string, object>
+                        {
+                            ["DuplicateData"] = false,  // Don't filter duplicates - we want fresh data
+                            ["Transport"] = "le"        // Low Energy only
+                        });
+
+                        // Start fresh discovery
+                        await adapter.StartDiscoveryAsync();
+                        lastDiscoveryRestart = DateTime.UtcNow;
+
+                        Console.WriteLine($"🔄 Discovery restarted at {lastDiscoveryRestart:HH:mm:ss} to refresh advertisement data");
+                    }
+
+                    // Set up device found handler only once
+                    if (!eventHandlerSet)
+                    {
+                        adapter.DeviceFound += (sender, args) =>
+                        {
+                            try
+                            {
+                                var device = args.Device;
+                                onDeviceFound?.Invoke(device);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error processing found device: {ex.Message}");
+                            }
+                            return Task.CompletedTask;
+                        };
+                        eventHandlerSet = true;
+                    }
+
+                    await Task.Delay(5000, cancellationToken); // Wait 5 seconds between checks
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error during continuous scanning: {ex.Message}");
+                    await Task.Delay(5000, cancellationToken);
+                }
+            }
+
+            // Stop discovery when cancelled
+            try
+            {
+                if (await adapter.GetDiscoveringAsync())
+                {
+                    await adapter.StopDiscoveryAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error stopping discovery: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Stops the current Bluetooth discovery process
+        /// </summary>
+        public async Task StopScanningAsync()
+        {
+            ThrowIfDisposed();
+
+            if (_adapter != null && await _adapter.GetDiscoveringAsync())
+            {
+                await _adapter.StopDiscoveryAsync();
+                Console.WriteLine("🛑 Discovery stopped");
             }
         }
         #endregion

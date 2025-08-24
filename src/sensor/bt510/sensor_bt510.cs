@@ -375,6 +375,9 @@ namespace SensorGateway.Sensors.bt510
                 to the 1M PHY specification is as follows:
                 byte: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 
                 date: 01 00 00 00 03 80 E9 EB 16 2B A6 ED 01 FD 02 C8 22 AA 68 98 08 00 00 02 
+ 02 01 06 1B FF 77 00 01 00 00 00 03 80 E9 EB 16 2B A6 ED 01 1D 03 F1 45 AA 68 9E 08 00 00 02 10 FF E4 00 03 00 00 00 05 01 00 00 00 01 00 0D 00 0A 09 44 54 54 2D 33 34 31 37 39
+                      01 00 00 00 03 80 E9 EB 16 2B A6 ED 01 18 03 14 40 AA 68 A0 08 00 00 02 
+
             */
             var measurements = new List<Measurement>();
 
