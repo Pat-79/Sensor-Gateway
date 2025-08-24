@@ -56,3 +56,4 @@ nunit-*.xml
 
 # Custom ifnores
 TestProgram.cs
+scripts/
